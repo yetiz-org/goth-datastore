@@ -23,6 +23,7 @@ var KKDBParamReaderMaxIdleConn = 32
 var KKDBParamWriterMaxOpenConn = 64
 var KKDBParamWriterMaxIdleConn = 32
 var KKDBParamConnMaxLifetime = 20000
+var KKDBParamConnMaxIdleTime = 0
 var KKDatabaseDebug = false
 var _KKDatabaseDebug = sync.Once{}
 
@@ -79,6 +80,7 @@ type ConnParams struct {
 	KKDBParamMaxOpenConn      int
 	KKDBParamMaxIdleConn      int
 	KKDBParamConnMaxLifetime  int
+	KKDBParamConnMaxIdleTime  int
 }
 
 func (ke *KKDatabaseOp) DB() *gorm.DB {
@@ -163,6 +165,7 @@ func KKDB(dbname string) *KKDatabase {
 					KKDBParamMaxOpenConn:      KKDBParamWriterMaxOpenConn,
 					KKDBParamMaxIdleConn:      KKDBParamWriterMaxIdleConn,
 					KKDBParamConnMaxLifetime:  KKDBParamConnMaxLifetime,
+					KKDBParamConnMaxIdleTime:  KKDBParamConnMaxIdleTime,
 				},
 				opType: TypeWriter,
 				meta:   profile.Writer,
@@ -184,6 +187,7 @@ func KKDB(dbname string) *KKDatabase {
 					KKDBParamMaxOpenConn:      KKDBParamReaderMaxOpenConn,
 					KKDBParamMaxIdleConn:      KKDBParamReaderMaxIdleConn,
 					KKDBParamConnMaxLifetime:  KKDBParamConnMaxLifetime,
+					KKDBParamConnMaxIdleTime:  KKDBParamConnMaxIdleTime,
 				},
 				opType: TypeReader,
 				meta:   profile.Reader,
@@ -256,6 +260,7 @@ func newDBConn(op *KKDatabaseOp, retry int) *gorm.DB {
 	db.DB().SetMaxIdleConns(op.ConnParams.KKDBParamMaxIdleConn)
 	db.SetLogger(&KKDatabaseLogger{})
 	db.DB().SetConnMaxLifetime(time.Millisecond * time.Duration(op.ConnParams.KKDBParamConnMaxLifetime))
+	db.DB().SetConnMaxIdleTime(time.Millisecond * time.Duration(op.ConnParams.KKDBParamConnMaxIdleTime))
 	db.Callback().Create().Replace("gorm:update_time_stamp", updateTimeStampForCreateCallback)
 	db.Callback().Update().Replace("gorm:update_time_stamp", updateTimeStampForUpdateCallback)
 	db.Callback().Delete().Replace("gorm:delete", deleteCallback)
