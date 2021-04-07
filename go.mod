@@ -1,6 +1,6 @@
 module github.com/kklab-com/goth-kkdatastore
 
-go 1.14
+go 1.16
 
 require (
 	cloud.google.com/go v0.38.0 // indirect
