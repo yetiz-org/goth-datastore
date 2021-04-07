@@ -67,20 +67,18 @@ type KKDatabaseOp struct {
 }
 
 type ConnParams struct {
-	KKDBParamCharset           string
-	KKDBParamTimeout           string
-	KKDBParamReadTimeout       string
-	KKDBParamWriteTimeout      string
-	KKDBParamCollation         string
-	KKDBParamLoc               string
-	KKDBParamClientFoundRows   bool
-	KKDBParamParseTime         bool
-	KKDBParamMaxAllowedPacket  int
-	KKDBParamReaderMaxOpenConn int
-	KKDBParamReaderMaxIdleConn int
-	KKDBParamWriterMaxOpenConn int
-	KKDBParamWriterMaxIdleConn int
-	KKDBParamConnMaxLifetime   int
+	KKDBParamCharset          string
+	KKDBParamTimeout          string
+	KKDBParamReadTimeout      string
+	KKDBParamWriteTimeout     string
+	KKDBParamCollation        string
+	KKDBParamLoc              string
+	KKDBParamClientFoundRows  bool
+	KKDBParamParseTime        bool
+	KKDBParamMaxAllowedPacket int
+	KKDBParamMaxOpenConn      int
+	KKDBParamMaxIdleConn      int
+	KKDBParamConnMaxLifetime  int
 }
 
 func (ke *KKDatabaseOp) DB() *gorm.DB {
@@ -88,11 +86,7 @@ func (ke *KKDatabaseOp) DB() *gorm.DB {
 		return newDBConn(ke, 5)
 	}
 
-	if ke.opType == TypeWriter && ke.ConnParams.KKDBParamWriterMaxIdleConn <= 0 {
-		return newDBConn(ke, 5)
-	}
-
-	if ke.opType == TypeReader && ke.ConnParams.KKDBParamReaderMaxIdleConn <= 0 {
+	if ke.ConnParams.KKDBParamMaxIdleConn <= 0 {
 		return newDBConn(ke, 5)
 	}
 
@@ -132,7 +126,9 @@ func (ke *KKDatabaseOp) Adapter() string {
 
 func KKDB(dbname string) *KKDatabase {
 	_KKDatabaseDebug.Do(func() {
-		KKDatabaseDebug = _IsKKDatabaseDebug()
+		if !KKDatabaseDebug {
+			KKDatabaseDebug = _IsKKDatastoreDebug()
+		}
 	})
 
 	if r, f := KKDatabaseProfiles.Load(dbname); f && !KKDatabaseDebug {
@@ -155,20 +151,18 @@ func KKDB(dbname string) *KKDatabase {
 		if profile.Writer.Adapter != "" {
 			database.writer = &KKDatabaseOp{
 				ConnParams: ConnParams{
-					KKDBParamCharset:           KKDBParamCharset,
-					KKDBParamTimeout:           KKDBParamDialTimeout,
-					KKDBParamReadTimeout:       KKDBParamReadTimeout,
-					KKDBParamWriteTimeout:      KKDBParamWriteTimeout,
-					KKDBParamCollation:         KKDBParamCollation,
-					KKDBParamLoc:               KKDBParamLoc,
-					KKDBParamClientFoundRows:   KKDBParamClientFoundRows,
-					KKDBParamParseTime:         KKDBParamParseTime,
-					KKDBParamMaxAllowedPacket:  KKDBParamMaxAllowedPacket,
-					KKDBParamReaderMaxOpenConn: KKDBParamReaderMaxOpenConn,
-					KKDBParamReaderMaxIdleConn: KKDBParamReaderMaxIdleConn,
-					KKDBParamWriterMaxOpenConn: KKDBParamWriterMaxOpenConn,
-					KKDBParamWriterMaxIdleConn: KKDBParamWriterMaxIdleConn,
-					KKDBParamConnMaxLifetime:   KKDBParamConnMaxLifetime,
+					KKDBParamCharset:          KKDBParamCharset,
+					KKDBParamTimeout:          KKDBParamDialTimeout,
+					KKDBParamReadTimeout:      KKDBParamReadTimeout,
+					KKDBParamWriteTimeout:     KKDBParamWriteTimeout,
+					KKDBParamCollation:        KKDBParamCollation,
+					KKDBParamLoc:              KKDBParamLoc,
+					KKDBParamClientFoundRows:  KKDBParamClientFoundRows,
+					KKDBParamParseTime:        KKDBParamParseTime,
+					KKDBParamMaxAllowedPacket: KKDBParamMaxAllowedPacket,
+					KKDBParamMaxOpenConn:      KKDBParamWriterMaxOpenConn,
+					KKDBParamMaxIdleConn:      KKDBParamWriterMaxIdleConn,
+					KKDBParamConnMaxLifetime:  KKDBParamConnMaxLifetime,
 				},
 				opType: TypeWriter,
 				meta:   profile.Writer,
@@ -178,20 +172,18 @@ func KKDB(dbname string) *KKDatabase {
 		if profile.Reader.Adapter != "" {
 			database.reader = &KKDatabaseOp{
 				ConnParams: ConnParams{
-					KKDBParamCharset:           KKDBParamCharset,
-					KKDBParamTimeout:           KKDBParamDialTimeout,
-					KKDBParamReadTimeout:       KKDBParamReadTimeout,
-					KKDBParamWriteTimeout:      KKDBParamWriteTimeout,
-					KKDBParamCollation:         KKDBParamCollation,
-					KKDBParamLoc:               KKDBParamLoc,
-					KKDBParamClientFoundRows:   KKDBParamClientFoundRows,
-					KKDBParamParseTime:         KKDBParamParseTime,
-					KKDBParamMaxAllowedPacket:  KKDBParamMaxAllowedPacket,
-					KKDBParamReaderMaxOpenConn: KKDBParamReaderMaxOpenConn,
-					KKDBParamReaderMaxIdleConn: KKDBParamReaderMaxIdleConn,
-					KKDBParamWriterMaxOpenConn: KKDBParamWriterMaxOpenConn,
-					KKDBParamWriterMaxIdleConn: KKDBParamWriterMaxIdleConn,
-					KKDBParamConnMaxLifetime:   KKDBParamConnMaxLifetime,
+					KKDBParamCharset:          KKDBParamCharset,
+					KKDBParamTimeout:          KKDBParamDialTimeout,
+					KKDBParamReadTimeout:      KKDBParamReadTimeout,
+					KKDBParamWriteTimeout:     KKDBParamWriteTimeout,
+					KKDBParamCollation:        KKDBParamCollation,
+					KKDBParamLoc:              KKDBParamLoc,
+					KKDBParamClientFoundRows:  KKDBParamClientFoundRows,
+					KKDBParamParseTime:        KKDBParamParseTime,
+					KKDBParamMaxAllowedPacket: KKDBParamMaxAllowedPacket,
+					KKDBParamMaxOpenConn:      KKDBParamReaderMaxOpenConn,
+					KKDBParamMaxIdleConn:      KKDBParamReaderMaxIdleConn,
+					KKDBParamConnMaxLifetime:  KKDBParamConnMaxLifetime,
 				},
 				opType: TypeReader,
 				meta:   profile.Reader,
@@ -260,15 +252,8 @@ func newDBConn(op *KKDatabaseOp, retry int) *gorm.DB {
 		return newDBConn(op, retry+1)
 	}
 
-	switch op.opType {
-	case TypeReader:
-		db.DB().SetMaxOpenConns(op.ConnParams.KKDBParamReaderMaxOpenConn)
-		db.DB().SetMaxIdleConns(op.ConnParams.KKDBParamReaderMaxIdleConn)
-	case TypeWriter:
-		db.DB().SetMaxOpenConns(op.ConnParams.KKDBParamWriterMaxOpenConn)
-		db.DB().SetMaxIdleConns(op.ConnParams.KKDBParamWriterMaxIdleConn)
-	}
-
+	db.DB().SetMaxOpenConns(op.ConnParams.KKDBParamMaxOpenConn)
+	db.DB().SetMaxIdleConns(op.ConnParams.KKDBParamMaxIdleConn)
 	db.SetLogger(&KKDatabaseLogger{})
 	db.DB().SetConnMaxLifetime(time.Millisecond * time.Duration(op.ConnParams.KKDBParamConnMaxLifetime))
 	db.Callback().Create().Replace("gorm:update_time_stamp", updateTimeStampForCreateCallback)
@@ -346,7 +331,6 @@ func (k *KKDatabaseLogger) Print(v ...interface{}) {
 	}
 }
 
-func _IsKKDatabaseDebug() bool {
-	return strings.ToUpper(os.Getenv("KKAPP_DEBUG")) == "TRUE" ||
-		strings.ToUpper(os.Getenv("KKDATABASE_DEBUG")) == "TRUE"
+func _IsKKDatastoreDebug() bool {
+	return strings.ToUpper(os.Getenv("KKDATASTORE_DEBUG")) == "TRUE"
 }

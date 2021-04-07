@@ -2,9 +2,7 @@ package datastore
 
 import (
 	"fmt"
-	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,10 +16,10 @@ var KKRedisProfiles = sync.Map{}
 var KKRedisDialTimeout = 1000
 var KKRedisMaxIdle = 20
 var KKRedisIdleTimeout = 60000
-var KKRedisDebug = false
 var KKRedisMaxConnLifetime = 0
 var KKRedisMaxActive = 0
 var KKRedisWait = false
+var KKRedisDebug = false
 var _KKRedisDebug = sync.Once{}
 
 type RedisOpType int
@@ -275,7 +273,9 @@ func (k *KKRedisOpResponse) RecordNotFound() bool {
 
 func KKREDIS(redisName string) *KKRedis {
 	_KKRedisDebug.Do(func() {
-		KKRedisDebug = _IsKKRedisDebug()
+		if !KKRedisDebug {
+			KKRedisDebug = _IsKKDatastoreDebug()
+		}
 	})
 
 	if r, f := KKRedisProfiles.Load(redisName); f && !KKRedisDebug {
@@ -333,9 +333,4 @@ func newRedisPool(meta kksecret.RedisMeta) *redis.Pool {
 	}
 
 	return redisPool
-}
-
-func _IsKKRedisDebug() bool {
-	return strings.ToUpper(os.Getenv("KKAPP_DEBUG")) == "TRUE" ||
-		strings.ToUpper(os.Getenv("KKREDIS_DEBUG")) == "TRUE"
 }
