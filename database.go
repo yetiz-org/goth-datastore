@@ -332,10 +332,22 @@ type KKDatabaseLogger struct {
 
 func (k *KKDatabaseLogger) Print(v ...interface{}) {
 	if val, ok := v[0].(string); ok && val == "error" {
-		kklogger.ErrorJ("Database", fmt.Sprint(v...))
+		unit := KKDatabaseLoggerUnit{
+			Logs: []string{},
+		}
+
+		for _, val := range v {
+			unit.Logs = append(unit.Logs, fmt.Sprint(val))
+		}
+
+		kklogger.ErrorJ("Database.Logger", unit)
 	}
 }
 
 func _IsKKDatastoreDebug() bool {
 	return strings.ToUpper(os.Getenv("KKDATASTORE_DEBUG")) == "TRUE"
+}
+
+type KKDatabaseLoggerUnit struct {
+	Logs []string `json:"logs"`
 }
