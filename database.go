@@ -85,19 +85,18 @@ type ConnParams struct {
 
 func (ke *KKDatabaseOp) DB() *gorm.DB {
 	if ke.ConnParams.KKDBParamConnMaxLifetime <= 0 {
-		return newDBConn(ke, 5)
+		return newDBConn(ke, 0)
 	}
 
 	if ke.ConnParams.KKDBParamMaxIdleConn <= 0 {
-		return newDBConn(ke, 5)
+		return newDBConn(ke, 0)
 	}
 
 	if ke.db == nil {
 		ke.once.Do(func() {
 			if ke.db == nil {
-				db := newDBConn(ke, 5)
+				db := newDBConn(ke, 0)
 				if db == nil {
-					ke.once = sync.Once{}
 					return
 				}
 
@@ -107,6 +106,7 @@ func (ke *KKDatabaseOp) DB() *gorm.DB {
 	}
 
 	if ke.db == nil {
+		ke.once = sync.Once{}
 		return nil
 	}
 
@@ -246,14 +246,15 @@ func newDBConn(op *KKDatabaseOp, retry int) *gorm.DB {
 	if err != nil {
 		kklogger.ErrorJ("KKDatabase", err.Error())
 		fmt.Println(err.Error())
-		if retry > 10 {
-			kklogger.ErrorJ("KKDatabase", "database retry too many times(> 10)")
-			fmt.Println("database retry too many times(> 10)")
+		retry += 1
+		if retry >= 5 {
+			kklogger.ErrorJ("KKDatabase", "database retry too many times(> 5)")
+			fmt.Println("database retry too many times(> 5)")
 			return nil
 		}
 
 		time.Sleep(time.Second * 1)
-		return newDBConn(op, retry+1)
+		return newDBConn(op, retry)
 	}
 
 	db.DB().SetMaxOpenConns(op.ConnParams.KKDBParamMaxOpenConn)
