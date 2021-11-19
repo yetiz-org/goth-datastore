@@ -8,7 +8,7 @@ require (
 	github.com/gomodule/redigo v2.0.0+incompatible
 	github.com/google/go-cmp v0.3.0 // indirect
 	github.com/jinzhu/gorm v1.9.11
-	github.com/kklab-com/goth-kklogger v1.0.0
+	github.com/kklab-com/goth-kklogger v1.0.1
 	github.com/kklab-com/goth-kksecret v0.0.0-20210515110028-29a17b1b6d85
 	github.com/stretchr/testify v1.7.0
 	google.golang.org/appengine v1.5.0 // indirect
