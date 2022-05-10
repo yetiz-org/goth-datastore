@@ -96,8 +96,7 @@ func (ke *KKDatabaseOp) DB() *gorm.DB {
 		ke.opLock.Lock()
 		defer ke.opLock.Unlock()
 		if ke.db == nil {
-			db := newDBConn(ke, 0)
-			if db == nil {
+			if ke.db = newDBConn(ke, 0); ke.db == nil {
 				return nil
 			}
 		}
