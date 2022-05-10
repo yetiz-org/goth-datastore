@@ -32,7 +32,7 @@ type CassandraOp struct {
 	meta    kksecret.CassandraMeta
 	cluster *gocql.ClusterConfig
 	session *gocql.Session
-	once    sync.Once
+	opLock  sync.Mutex
 }
 
 func (k *CassandraOp) Cluster() *gocql.ClusterConfig {
@@ -40,14 +40,19 @@ func (k *CassandraOp) Cluster() *gocql.ClusterConfig {
 }
 
 func (k *CassandraOp) Session() *gocql.Session {
-	k.once.Do(func() {
-		session, err := k.cluster.CreateSession()
-		if err != nil {
-			kklogger.ErrorJ("goth-kkdatastore:CassandraOp.Session", err.Error())
-		}
+	if k.session == nil {
+		k.opLock.Lock()
+		defer k.opLock.Unlock()
+		if k.session == nil {
+			session, err := k.cluster.CreateSession()
+			if err != nil {
+				kklogger.ErrorJ("goth-kkdatastore:CassandraOp.Session", err.Error())
+				return nil
+			}
 
-		k.session = session
-	})
+			k.session = session
+		}
+	}
 
 	return k.session
 }

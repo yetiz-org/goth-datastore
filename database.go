@@ -63,7 +63,7 @@ type KKDatabaseOp struct {
 	opType     OPType //0 reader, 1 writer
 	meta       kksecret.DatabaseMeta
 	db         *gorm.DB
-	once       sync.Once
+	opLock     sync.Mutex
 	ConnParams ConnParams
 }
 
@@ -93,21 +93,14 @@ func (ke *KKDatabaseOp) DB() *gorm.DB {
 	}
 
 	if ke.db == nil {
-		ke.once.Do(func() {
-			if ke.db == nil {
-				db := newDBConn(ke, 0)
-				if db == nil {
-					return
-				}
-
-				ke.db = db
+		ke.opLock.Lock()
+		defer ke.opLock.Unlock()
+		if ke.db == nil {
+			db := newDBConn(ke, 0)
+			if db == nil {
+				return nil
 			}
-		})
-	}
-
-	if ke.db == nil {
-		ke.once = sync.Once{}
-		return nil
+		}
 	}
 
 	db := ke.db.New()

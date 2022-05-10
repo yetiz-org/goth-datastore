@@ -48,14 +48,16 @@ type KKRedisOp struct {
 	opType RedisOpType //0 master, 1 slave
 	meta   kksecret.RedisMeta
 	pool   *redis.Pool
-	once   sync.Once
+	opLock sync.Mutex
 }
 
 func (k *KKRedisOp) Conn() redis.Conn {
 	if k.pool == nil {
-		k.once.Do(func() {
+		k.opLock.Lock()
+		defer k.opLock.Unlock()
+		if k.pool == nil {
 			k.pool = newRedisPool(k.meta)
-		})
+		}
 	}
 
 	return k.pool.Get()
