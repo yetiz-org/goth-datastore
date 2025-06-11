@@ -11,12 +11,9 @@ require (
 	github.com/google/go-cmp v0.3.0 // indirect
 	github.com/jinzhu/gorm v1.9.11
 	github.com/stretchr/testify v1.7.0
-	google.golang.org/appengine v1.5.0 // indirect
-)
-
-require (
 	github.com/yetiz-org/goth-kklogger v0.0.0-20250611122328-03d2bbd5bc69
 	github.com/yetiz-org/goth-kksecret v0.0.0-20250611122445-b18924e3664a
+	google.golang.org/appengine v1.5.0 // indirect
 )
 
 require (
