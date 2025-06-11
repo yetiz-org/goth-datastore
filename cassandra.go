@@ -4,8 +4,8 @@ import (
 	"sync"
 
 	"github.com/gocql/gocql"
-	"github.com/kklab-com/goth-kklogger"
-	kksecret "github.com/kklab-com/goth-kksecret"
+	"github.com/yetiz-org/goth-kklogger"
+	kksecret "github.com/yetiz-org/goth-kksecret"
 )
 
 var KKCassandraLocker = sync.Mutex{}

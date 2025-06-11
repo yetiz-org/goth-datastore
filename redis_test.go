@@ -3,7 +3,7 @@ package datastore
 import (
 	"testing"
 
-	kksecret "github.com/kklab-com/goth-kksecret"
+	kksecret "github.com/yetiz-org/goth-kksecret"
 )
 
 func TestKKRedisOp_Get(t *testing.T) {

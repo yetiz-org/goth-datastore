@@ -1,6 +1,8 @@
-module github.com/kklab-com/goth-kkdatastore
+module github.com/yetiz-org/goth-kkdatastore
 
-go 1.17
+go 1.22
+
+toolchain go1.24.0
 
 require (
 	cloud.google.com/go v0.38.0 // indirect
@@ -8,10 +10,13 @@ require (
 	github.com/gomodule/redigo v1.8.8
 	github.com/google/go-cmp v0.3.0 // indirect
 	github.com/jinzhu/gorm v1.9.11
-	github.com/kklab-com/goth-kklogger v1.0.1
-	github.com/kklab-com/goth-kksecret v0.0.0-20210515110028-29a17b1b6d85
 	github.com/stretchr/testify v1.7.0
 	google.golang.org/appengine v1.5.0 // indirect
+)
+
+require (
+	github.com/yetiz-org/goth-kklogger v0.0.0-20250611122328-03d2bbd5bc69
+	github.com/yetiz-org/goth-kksecret v0.0.0-20250611122445-b18924e3664a
 )
 
 require (
@@ -24,9 +29,9 @@ require (
 	github.com/lib/pq v1.1.1 // indirect
 	github.com/mattn/go-sqlite3 v1.11.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/sirupsen/logrus v1.8.1 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	golang.org/x/crypto v0.0.0-20190325154230-a5d413f7728c // indirect
-	golang.org/x/sys v0.0.0-20191228213918-04cbcbbfeed8 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200313102051-9f266ea9e77c // indirect
 )

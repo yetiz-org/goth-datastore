@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gomodule/redigo/redis"
-	"github.com/kklab-com/goth-kklogger"
-	"github.com/kklab-com/goth-kksecret"
+	"github.com/yetiz-org/goth-kklogger"
+	"github.com/yetiz-org/goth-kksecret"
 )
 
 var KKRedisLocker = sync.Mutex{}

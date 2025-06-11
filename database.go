@@ -2,6 +2,8 @@ package datastore
 
 import (
 	"fmt"
+	kklogger "github.com/yetiz-org/goth-kklogger"
+	kksecret "github.com/yetiz-org/goth-kksecret"
 	"os"
 	"strings"
 	"sync"
@@ -12,8 +14,6 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
-	"github.com/kklab-com/goth-kklogger"
-	"github.com/kklab-com/goth-kksecret"
 )
 
 var KKDatabaseLocker = sync.Mutex{}
