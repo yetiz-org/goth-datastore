@@ -1,4 +1,4 @@
-module github.com/yetiz-org/goth-kkdatastore
+module github.com/yetiz-org/goth-datastore
 
 go 1.23
 
