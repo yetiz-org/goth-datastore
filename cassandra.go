@@ -5,114 +5,153 @@ import (
 
 	"github.com/gocql/gocql"
 	"github.com/yetiz-org/goth-kklogger"
-	kksecret "github.com/yetiz-org/goth-kksecret"
+	secret "github.com/yetiz-org/goth-secret"
 )
 
-var KKCassandraLocker = sync.Mutex{}
-var KKCassandraProfiles = sync.Map{}
-var KKCassandraDebug = false
-var _KKCassandraDebug = sync.Once{}
-
+// Cassandra represents a Cassandra database connection with separate read and write operations.
+// It maintains separate connection pools for read and write operations to support different
+// consistency requirements and potentially different endpoints.
 type Cassandra struct {
-	name   string
-	writer *CassandraOp
-	reader *CassandraOp
+	name   string       // Profile name used for configuration
+	writer *CassandraOp // Write operations handler
+	reader *CassandraOp // Read operations handler
 }
 
-func (k *Cassandra) Writer() *CassandraOp {
-	return k.writer
+// Writer returns the CassandraOp configured for write operations.
+func (c *Cassandra) Writer() *CassandraOp {
+	return c.writer
 }
 
-func (k *Cassandra) Reader() *CassandraOp {
-	return k.reader
+// Reader returns the CassandraOp configured for read operations.
+func (c *Cassandra) Reader() *CassandraOp {
+	return c.reader
 }
 
+// Close closes all active sessions (both reader and writer).
+func (c *Cassandra) Close() {
+	if c.writer != nil {
+		c.writer.Close()
+	}
+	if c.reader != nil {
+		c.reader.Close()
+	}
+}
+
+// CassandraOp represents operations for a Cassandra database connection.
 type CassandraOp struct {
-	opType  OPType
-	meta    kksecret.CassandraMeta
-	cluster *gocql.ClusterConfig
-	session *gocql.Session
-	opLock  sync.Mutex
+	name    string               // Name identifier for this operation handler
+	meta    secret.CassandraMeta // Connection metadata from configuration
+	cluster *gocql.ClusterConfig // Cassandra cluster configuration
+	session *gocql.Session       // Lazy-loaded session
+	opLock  sync.Mutex           // Mutex to protect session initialization
 }
 
-func (k *CassandraOp) Cluster() *gocql.ClusterConfig {
-	return k.cluster
+// Config returns the underlying gocql cluster configuration.
+func (c *CassandraOp) Config() *gocql.ClusterConfig {
+	return c.cluster
 }
 
-func (k *CassandraOp) Session() *gocql.Session {
-	if k.session == nil {
-		k.opLock.Lock()
-		defer k.opLock.Unlock()
-		if k.session == nil {
-			session, err := k.cluster.CreateSession()
-			if err != nil {
-				kklogger.ErrorJ("goth-kkdatastore:CassandraOp.Session", err.Error())
-				return nil
-			}
+func (c *CassandraOp) Exec(f func(session *gocql.Session)) error {
+	if session, err := c.NewSession(); err == nil {
+		defer session.Close()
+		f(session)
+		return nil
+	} else {
+		return err
+	}
+}
 
-			k.session = session
-		}
+// NewSession creates and returns a new Cassandra session.
+// Returns nil if session creation fails.
+func (c *CassandraOp) NewSession() (*gocql.Session, error) {
+	session, err := c.cluster.CreateSession()
+	if err != nil {
+		kklogger.ErrorJ("datastore:CassandraOp.NewSession", err.Error())
+		return nil, err
 	}
 
-	return k.session
+	return session, nil
 }
 
-func KKCassandra(cassandraName string) *Cassandra {
-	_KKCassandraDebug.Do(func() {
-		if !KKCassandraDebug {
-			KKCassandraDebug = _IsKKDatastoreDebug()
-		}
-	})
-
-	if r, f := KKCassandraProfiles.Load(cassandraName); f && !KKCassandraDebug {
-		return r.(*Cassandra)
+// Session returns the current Cassandra session, creating it if it doesn't exist.
+// Uses double-checked locking pattern for thread safety.
+func (c *CassandraOp) Session() *gocql.Session {
+	if c.session != nil && c.session.Closed() == false {
+		return c.session
 	}
 
-	profile := kksecret.CassandraProfile(cassandraName)
-	if profile == nil {
+	c.opLock.Lock()
+	defer c.opLock.Unlock()
+	var err error
+	c.session, err = c.NewSession()
+	if err != nil {
 		return nil
 	}
 
-	KKCassandraLocker.Lock()
-	defer KKCassandraLocker.Unlock()
-	if KKCassandraDebug {
-		KKCassandraProfiles.Delete(cassandraName)
+	return c.session
+}
+
+// Close safely closes the current session if it exists.
+func (c *CassandraOp) Close() {
+	if c.session != nil && c.session.Closed() == false {
+		c.opLock.Lock()
+		defer c.opLock.Unlock()
+		c.session.Close()
+		c.session = nil
+	}
+}
+
+// configureCassandraOp creates and configures a CassandraOp with the provided metadata.
+func configureCassandraOp(name string, meta secret.CassandraMeta) *CassandraOp {
+	op := &CassandraOp{
+		name: name,
+		meta: meta,
 	}
 
-	if r, f := KKCassandraProfiles.Load(cassandraName); !f {
-		csd := &Cassandra{
-			name: cassandraName,
-		}
+	// Configure the cluster
+	op.configureCluster()
 
-		wop := &CassandraOp{}
-		wop.opType = TypeWriter
-		wop.meta = profile.Writer
-		wop.cluster = gocql.NewCluster(wop.meta.Hosts...)
-		wop.cluster.Authenticator = gocql.PasswordAuthenticator{
-			Username: wop.meta.Username,
-			Password: wop.meta.Password,
-		}
+	return op
+}
 
-		wop.cluster.SslOpts = &gocql.SslOptions{CaPath: wop.meta.CaPath}
-		wop.cluster.Consistency = gocql.LocalQuorum
-		csd.writer = wop
+// configureCluster initializes and configures the gocql cluster based on the metadata.
+func (c *CassandraOp) configureCluster() {
+	c.cluster = gocql.NewCluster(c.meta.Endpoints...)
 
-		rop := &CassandraOp{}
-		rop.opType = TypeReader
-		rop.meta = profile.Reader
-		rop.cluster = gocql.NewCluster(rop.meta.Hosts...)
-		rop.cluster.Authenticator = gocql.PasswordAuthenticator{
-			Username: rop.meta.Username,
-			Password: rop.meta.Password,
-		}
-
-		rop.cluster.SslOpts = &gocql.SslOptions{CaPath: rop.meta.CaPath}
-		rop.cluster.Consistency = gocql.LocalQuorum
-		csd.reader = rop
-
-		KKCassandraProfiles.Store(cassandraName, csd)
-		return csd
-	} else {
-		return r.(*Cassandra)
+	// Configure authentication
+	c.cluster.Authenticator = gocql.PasswordAuthenticator{
+		Username: c.meta.Username,
+		Password: c.meta.Password,
 	}
+
+	// Configure SSL and consistency
+	c.cluster.SslOpts = &gocql.SslOptions{CaPath: c.meta.CaPath}
+	c.cluster.Consistency = gocql.LocalQuorum
+}
+
+// NewCassandra creates a new Cassandra connection handler with the specified profile.
+// Returns nil if the profile name is empty or if loading the profile fails.
+func NewCassandra(profileName string) *Cassandra {
+	if profileName == "" {
+		kklogger.ErrorJ("datastore.NewCassandra#profileName", "profile name is empty")
+		return nil
+	}
+
+	// Load the Cassandra profile
+	profile := &secret.Cassandra{}
+	if err := secret.Load("cassandra", profileName, profile); err != nil {
+		kklogger.ErrorJ("datastore.NewCassandra#Load", err.Error())
+		return nil
+	}
+
+	// Create Cassandra handler
+	csd := &Cassandra{
+		name: profileName,
+	}
+
+	// Configure writer and reader operations
+	csd.writer = configureCassandraOp(profileName, profile.Writer)
+	csd.reader = configureCassandraOp(profileName, profile.Reader)
+
+	return csd
 }

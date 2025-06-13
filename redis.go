@@ -1,223 +1,213 @@
 package datastore
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	secret "github.com/yetiz-org/goth-secret"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/yetiz-org/goth-kklogger"
-	"github.com/yetiz-org/goth-kksecret"
 )
 
-var KKRedisLocker = sync.Mutex{}
-var KKRedisProfiles = sync.Map{}
-var KKRedisDialTimeout = 1000
-var KKRedisMaxIdle = 20
-var KKRedisIdleTimeout = 60000
-var KKRedisMaxConnLifetime = 0
-var KKRedisMaxActive = 0
-var KKRedisWait = false
-var KKRedisDebug = false
-var _KKRedisDebug = sync.Once{}
+var DefaultRedisDialTimeout = 1000
+var DefaultRedisMaxIdle = 20
+var DefaultRedisIdleTimeout = 60000
+var DefaultRedisMaxConnLifetime = 0
+var DefaultRedisMaxActive = 0
+var DefaultRedisWait = false
 
-type RedisOpType int
-
-const (
-	TypeMaster RedisOpType = 0
-	TypeSlave  RedisOpType = 1
-)
-
-// can be improvement by add more connection
-type KKRedis struct {
+type Redis struct {
 	name   string
-	master *KKRedisOp
-	slave  *KKRedisOp
+	master *RedisOp
+	slave  *RedisOp
 }
 
-func (k *KKRedis) Master() *KKRedisOp {
-	return k.master
+func (r *Redis) Master() *RedisOp {
+	return r.master
 }
 
-func (k *KKRedis) Slave() *KKRedisOp {
-	return k.slave
+func (r *Redis) Slave() *RedisOp {
+	return r.slave
 }
 
-type KKRedisOp struct {
-	opType RedisOpType //0 master, 1 slave
-	meta   kksecret.RedisMeta
+type RedisOp struct {
+	meta   secret.RedisMeta
 	pool   *redis.Pool
 	opLock sync.Mutex
 }
 
-func (k *KKRedisOp) Conn() redis.Conn {
-	if k.pool == nil {
-		k.opLock.Lock()
-		defer k.opLock.Unlock()
-		if k.pool == nil {
-			k.pool = newRedisPool(k.meta)
-		}
-	}
-
-	return k.pool.Get()
+func (o *RedisOp) Pool() *redis.Pool {
+	return o.pool
 }
 
-func (k *KKRedisOp) ActiveCount() int {
-	if k.pool == nil {
+func (o *RedisOp) Conn() redis.Conn {
+	return o.pool.Get()
+}
+
+func (o *RedisOp) ActiveCount() int {
+	if o.pool == nil {
 		return 0
 	}
 
-	return k.pool.ActiveCount()
+	return o.pool.ActiveCount()
 }
 
-func (k *KKRedisOp) IdleCount() int {
-	if k.pool == nil {
+func (o *RedisOp) IdleCount() int {
+	if o.pool == nil {
 		return 0
 	}
 
-	return k.pool.IdleCount()
+	return o.pool.IdleCount()
 }
 
 var RedisNotFound = fmt.Errorf("not_found")
 
-func (k *KKRedisOp) _Do(cmd string, args ...interface{}) *KKRedisOpResponse {
-	conn := k.Conn()
-	r, err := conn.Do(cmd, args...)
-	if e := conn.Close(); e != nil {
-		kklogger.ErrorJ("kkdatastore.redis#Close", e.Error())
+func (o *RedisOp) Exec(f func(conn redis.Conn)) error {
+	if conn, err := o.pool.GetContext(context.Background()); err != nil {
+		return err
+	} else {
+		f(conn)
+		return conn.Close()
 	}
+}
 
-	if err == nil {
+func (o *RedisOp) _Do(cmd string, args ...interface{}) *RedisResponse {
+	conn := o.Conn()
+	defer o.Close()
+	if r, err := conn.Do(cmd, args...); err == nil {
 		if r == nil {
-			return &KKRedisOpResponse{
+			return &RedisResponse{
 				Error: RedisNotFound,
 			}
 		} else {
-			return &KKRedisOpResponse{
-				KKRedisOpResponseUnit: KKRedisOpResponseUnit{data: r},
-				Error:                 nil,
+			return &RedisResponse{
+				RedisResponseEntity: RedisResponseEntity{data: r},
+				Error:               nil,
 			}
 		}
 	} else {
-		return &KKRedisOpResponse{
+		return &RedisResponse{
 			Error: err,
 		}
 	}
 }
 
-func (k *KKRedisOp) Get(key interface{}) *KKRedisOpResponse {
-	return k._Do("GET", key)
+func (o *RedisOp) Get(key interface{}) *RedisResponse {
+	return o._Do("GET", key)
 }
 
-func (k *KKRedisOp) Set(key interface{}, val interface{}) *KKRedisOpResponse {
-	return k._Do("SET", key, val)
+func (o *RedisOp) Set(key interface{}, val interface{}) *RedisResponse {
+	return o._Do("SET", key, val)
 }
 
-func (k *KKRedisOp) Expire(key interface{}, ttl int64) *KKRedisOpResponse {
-	return k._Do("EXPIRE", key, ttl)
+func (o *RedisOp) Expire(key interface{}, ttl int64) *RedisResponse {
+	return o._Do("EXPIRE", key, ttl)
 }
 
-func (k *KKRedisOp) Delete(key ...interface{}) *KKRedisOpResponse {
-	return k._Do("DEL", key...)
+func (o *RedisOp) Delete(key ...interface{}) *RedisResponse {
+	return o._Do("DEL", key...)
 }
 
-func (k *KKRedisOp) Keys(key interface{}) *KKRedisOpResponse {
-	return k._Do("KEYS", key)
+func (o *RedisOp) Keys(key interface{}) *RedisResponse {
+	return o._Do("KEYS", key)
 }
 
-func (k *KKRedisOp) Exists(key ...interface{}) *KKRedisOpResponse {
-	return k._Do("EXISTS", key...)
+func (o *RedisOp) Exists(key ...interface{}) *RedisResponse {
+	return o._Do("EXISTS", key...)
 }
 
-func (k *KKRedisOp) SetExpire(key interface{}, val interface{}, ttl int64) *KKRedisOpResponse {
-	return k._Do("SETEX", key, ttl, val)
+func (o *RedisOp) SetExpire(key interface{}, val interface{}, ttl int64) *RedisResponse {
+	return o._Do("SETEX", key, ttl, val)
 }
 
-func (k *KKRedisOp) HMSet(key interface{}, val map[interface{}]interface{}) *KKRedisOpResponse {
+func (o *RedisOp) HMSet(key interface{}, val map[interface{}]interface{}) *RedisResponse {
 	vals := []interface{}{key}
 	for mk, mv := range val {
 		vals = append(vals, mk, mv)
 	}
 
-	return k._Do("HMSET", vals...)
+	return o._Do("HMSET", vals...)
 }
 
-func (k *KKRedisOp) HMGet(key interface{}, field ...interface{}) *KKRedisOpResponse {
+func (o *RedisOp) HMGet(key interface{}, field ...interface{}) *RedisResponse {
 	vals := []interface{}{key}
 	for _, f := range field {
 		vals = append(vals, f)
 	}
 
-	return k._Do("HMGET", vals...)
+	return o._Do("HMGET", vals...)
 }
 
-func (k *KKRedisOp) HSet(key, field, val interface{}) *KKRedisOpResponse {
-	return k._Do("HSET", key, field, val)
+func (o *RedisOp) HSet(key, field, val interface{}) *RedisResponse {
+	return o._Do("HSET", key, field, val)
 }
 
-func (k *KKRedisOp) HGet(key, field interface{}) *KKRedisOpResponse {
-	return k._Do("HGET", key, field)
+func (o *RedisOp) HGet(key, field interface{}) *RedisResponse {
+	return o._Do("HGET", key, field)
 }
 
-func (k *KKRedisOp) HExists(key, field interface{}) *KKRedisOpResponse {
-	return k._Do("HEXISTS", key, field)
+func (o *RedisOp) HExists(key, field interface{}) *RedisResponse {
+	return o._Do("HEXISTS", key, field)
 }
 
-func (k *KKRedisOp) HDel(key interface{}, field ...interface{}) *KKRedisOpResponse {
+func (o *RedisOp) HDel(key interface{}, field ...interface{}) *RedisResponse {
 	vals := []interface{}{key}
 	for _, f := range field {
 		vals = append(vals, f)
 	}
 
-	return k._Do("HDEL", vals...)
+	return o._Do("HDEL", vals...)
 }
 
-func (k *KKRedisOp) HGetAll(key interface{}) *KKRedisOpResponse {
-	return k._Do("HGETALL", key)
+func (o *RedisOp) HGetAll(key interface{}) *RedisResponse {
+	return o._Do("HGETALL", key)
 }
 
-func (k *KKRedisOp) HLen(key interface{}) *KKRedisOpResponse {
-	return k._Do("HLEN", key)
+func (o *RedisOp) HLen(key interface{}) *RedisResponse {
+	return o._Do("HLEN", key)
 }
 
-func (k *KKRedisOp) HKeys(key interface{}) *KKRedisOpResponse {
-	return k._Do("HKEYS", key)
+func (o *RedisOp) HKeys(key interface{}) *RedisResponse {
+	return o._Do("HKEYS", key)
 }
 
-func (k *KKRedisOp) HIncrBy(key interface{}, field interface{}, val int64) *KKRedisOpResponse {
-	return k._Do("HINCRBY", key, field, val)
+func (o *RedisOp) HIncrBy(key interface{}, field interface{}, val int64) *RedisResponse {
+	return o._Do("HINCRBY", key, field, val)
 }
 
-func (k *KKRedisOp) HVals(key interface{}) *KKRedisOpResponse {
-	return k._Do("HVALS", key)
+func (o *RedisOp) HVals(key interface{}) *RedisResponse {
+	return o._Do("HVALS", key)
 }
 
-func (k *KKRedisOp) Incr(key interface{}) *KKRedisOpResponse {
-	return k._Do("INCR", key)
+func (o *RedisOp) Incr(key interface{}) *RedisResponse {
+	return o._Do("INCR", key)
 }
 
-func (k *KKRedisOp) IncrBy(key interface{}, val int64) *KKRedisOpResponse {
-	return k._Do("INCRBY", key, val)
+func (o *RedisOp) IncrBy(key interface{}, val int64) *RedisResponse {
+	return o._Do("INCRBY", key, val)
 }
 
-func (k *KKRedisOp) Publish(key interface{}, val interface{}) *KKRedisOpResponse {
-	return k._Do("PUBLISH", key, val)
+func (o *RedisOp) Publish(key interface{}, val interface{}) *RedisResponse {
+	return o._Do("PUBLISH", key, val)
 }
 
-func (k *KKRedisOp) Close() error {
-	if k.pool != nil {
-		return k.pool.Close()
+func (o *RedisOp) Close() error {
+	if o.pool != nil {
+		return o.pool.Close()
 	}
 
 	return nil
 }
 
-type KKRedisOpResponseUnit struct {
+type RedisResponseEntity struct {
 	data interface{}
 }
 
-func (k *KKRedisOpResponseUnit) GetInt64() int64 {
+func (k *RedisResponseEntity) GetInt64() int64 {
 	switch v := k.data.(type) {
 	case int64:
 		return v
@@ -232,7 +222,7 @@ func (k *KKRedisOpResponseUnit) GetInt64() int64 {
 	return 0
 }
 
-func (k *KKRedisOpResponseUnit) GetString() string {
+func (k *RedisResponseEntity) GetString() string {
 	switch v := k.data.(type) {
 	case []byte:
 		return string(v)
@@ -243,7 +233,7 @@ func (k *KKRedisOpResponseUnit) GetString() string {
 	}
 }
 
-func (k *KKRedisOpResponseUnit) GetBytes() []byte {
+func (k *RedisResponseEntity) GetBytes() []byte {
 	switch v := k.data.(type) {
 	case []byte:
 		return v
@@ -252,81 +242,65 @@ func (k *KKRedisOpResponseUnit) GetBytes() []byte {
 	return nil
 }
 
-func (k *KKRedisOpResponse) GetSlice() []KKRedisOpResponseUnit {
-	var entities []KKRedisOpResponseUnit
+func (k *RedisResponse) GetSlice() []RedisResponseEntity {
+	var entities []RedisResponseEntity
 	switch v := k.data.(type) {
 	case []interface{}:
 		for _, entity := range v {
-			entities = append(entities, KKRedisOpResponseUnit{data: entity})
+			entities = append(entities, RedisResponseEntity{data: entity})
 		}
 	}
 
 	return entities
 }
 
-type KKRedisOpResponse struct {
-	KKRedisOpResponseUnit
+type RedisResponse struct {
+	RedisResponseEntity
 	Error error
 }
 
-func (k *KKRedisOpResponse) RecordNotFound() bool {
-	return k.Error == RedisNotFound
+func (k *RedisResponse) RecordNotFound() bool {
+	return errors.Is(k.Error, RedisNotFound)
 }
 
-func KKREDIS(redisName string) *KKRedis {
-	_KKRedisDebug.Do(func() {
-		if !KKRedisDebug {
-			KKRedisDebug = _IsKKDatastoreDebug()
-		}
-	})
-
-	if r, f := KKRedisProfiles.Load(redisName); f && !KKRedisDebug {
-		return r.(*KKRedis)
-	}
-
-	profile := kksecret.RedisProfile(redisName)
-	if profile == nil {
+func NewRedis(profileName string) *Redis {
+	profile := &secret.Redis{}
+	if err := secret.Load("redis", profileName, profile); err != nil {
+		kklogger.ErrorJ("datastore.redis#Load", err.Error())
 		return nil
 	}
 
-	KKRedisLocker.Lock()
-	defer KKRedisLocker.Unlock()
-	if KKRedisDebug {
-		KKRedisProfiles.Delete(redisName)
+	r := &Redis{
+		name: profileName,
 	}
 
-	if r, f := KKRedisProfiles.Load(redisName); !f {
-		r := &KKRedis{
-			name: redisName,
-		}
-
-		mop := KKRedisOp{}
-		mop.opType = TypeMaster
-		mop.meta = profile.Master
-		r.master = &mop
-
-		sop := KKRedisOp{}
-		sop.opType = TypeSlave
-		sop.meta = profile.Slave
-		r.slave = &sop
-
-		KKRedisProfiles.Store(redisName, r)
-		return r
-	} else {
-		return r.(*KKRedis)
+	mop := RedisOp{
+		meta: profile.Master,
+		pool: newRedisPool(profile.Master),
 	}
+
+	r.master = &mop
+
+	sop := RedisOp{
+		meta: profile.Slave,
+		pool: newRedisPool(profile.Slave),
+	}
+
+	r.slave = &sop
+
+	return r
 }
 
-func newRedisPool(meta kksecret.RedisMeta) *redis.Pool {
+func newRedisPool(meta secret.RedisMeta) *redis.Pool {
 	redisPool := &redis.Pool{
-		MaxActive:       KKRedisMaxActive,
-		MaxIdle:         KKRedisMaxIdle,
-		IdleTimeout:     time.Duration(KKRedisIdleTimeout) * time.Millisecond,
-		MaxConnLifetime: time.Duration(KKRedisMaxConnLifetime) * time.Millisecond,
-		Wait:            KKRedisWait,
+		MaxActive:       DefaultRedisMaxActive,
+		MaxIdle:         DefaultRedisMaxIdle,
+		IdleTimeout:     time.Duration(DefaultRedisIdleTimeout) * time.Millisecond,
+		MaxConnLifetime: time.Duration(DefaultRedisMaxConnLifetime) * time.Millisecond,
+		Wait:            DefaultRedisWait,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.DialURL(fmt.Sprintf("redis://%s:%d", meta.Host,
-				meta.Port), redis.DialConnectTimeout(time.Duration(KKRedisDialTimeout)*time.Millisecond))
+				meta.Port), redis.DialConnectTimeout(time.Duration(DefaultRedisDialTimeout)*time.Millisecond))
 			if err != nil {
 				return nil, err
 			}
