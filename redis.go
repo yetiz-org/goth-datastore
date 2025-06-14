@@ -195,6 +195,10 @@ func (o *RedisOp) Publish(key interface{}, val interface{}) *RedisResponse {
 	return o._Do("PUBLISH", key, val)
 }
 
+func (o *RedisOp) Ping() *RedisResponse {
+	return o._Do("PING")
+}
+
 func (o *RedisOp) Close() error {
 	if o.pool != nil {
 		return o.pool.Close()
