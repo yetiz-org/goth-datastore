@@ -6,8 +6,8 @@ toolchain go1.24.0
 
 require (
 	github.com/gocql/gocql v0.0.0-20210504150947-558dfae50b5d
-	github.com/gomodule/redigo v1.8.8
-	github.com/stretchr/testify v1.8.1
+	github.com/gomodule/redigo v1.9.2
+	github.com/stretchr/testify v1.8.4
 	github.com/yetiz-org/goth-kklogger v0.0.0-20250611122328-03d2bbd5bc69
 )
 
