@@ -12,7 +12,7 @@ require (
 )
 
 require (
-	github.com/yetiz-org/goth-secret v1.1.4
+	github.com/yetiz-org/goth-secret v1.1.5
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
 )

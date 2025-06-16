@@ -50,8 +50,8 @@ github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcU
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
 github.com/yetiz-org/goth-kklogger v0.0.0-20250611122328-03d2bbd5bc69 h1:0AF0f33PZdIDsgS4oGCx9ykXtaj57IOaUVLSNTi+CYE=
 github.com/yetiz-org/goth-kklogger v0.0.0-20250611122328-03d2bbd5bc69/go.mod h1:0+Vm4Pvd71vE3KgldC9BaFTrf3btlMYUCyliSgDZMhY=
-github.com/yetiz-org/goth-secret v1.1.4 h1:hzoGWIOsaSeq2GpzEGENLG41x2aUNE82md60L90rnZM=
-github.com/yetiz-org/goth-secret v1.1.4/go.mod h1:OeHNt5/Ans6zR8pzuXlTMdR5Qnka9u4lNb1tyDWvDRs=
+github.com/yetiz-org/goth-secret v1.1.5 h1:2ESqkN2iyRmKCHaaAc3QafM7JX0cxWQJMqudBR49hdA=
+github.com/yetiz-org/goth-secret v1.1.5/go.mod h1:OeHNt5/Ans6zR8pzuXlTMdR5Qnka9u4lNb1tyDWvDRs=
 golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.30.0 h1:QjkSwP/36a20jFYWkSue1YwXzLmsV5Gfq7Eiy72C1uc=
 golang.org/x/sys v0.30.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=

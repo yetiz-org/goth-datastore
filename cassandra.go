@@ -1,7 +1,12 @@
 package datastore
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/gocql/gocql"
 	"github.com/yetiz-org/goth-kklogger"
@@ -39,11 +44,16 @@ func (c *Cassandra) Close() {
 
 // CassandraOp represents operations for a Cassandra database connection.
 type CassandraOp struct {
-	name    string               // Name identifier for this operation handler
-	meta    secret.CassandraMeta // Connection metadata from configuration
-	cluster *gocql.ClusterConfig // Cassandra cluster configuration
-	session *gocql.Session       // Lazy-loaded session
-	opLock  sync.Mutex           // Mutex to protect session initialization
+	keyspace        string
+	meta            secret.CassandraMeta // Connection metadata from configuration
+	cluster         *gocql.ClusterConfig // Cassandra cluster configuration
+	session         *gocql.Session       // Lazy-loaded session
+	opLock          sync.Mutex           // Mutex to protect session initialization
+	MaxRetryAttempt int
+}
+
+func (c *CassandraOp) Keyspace() string {
+	return c.keyspace
 }
 
 // Config returns the underlying gocql cluster configuration.
@@ -101,11 +111,33 @@ func (c *CassandraOp) Close() {
 	}
 }
 
+func (c *CassandraOp) ObserveConnect(connect gocql.ObservedConnect) {
+	if connect.Err != nil {
+		kklogger.WarnJ("datastore:CassandraOp.ObserveConnect", connect.Err.Error())
+	} else {
+		marshal, _ := json.Marshal(connect)
+		kklogger.DebugJ("datastore:CassandraOp.ObserveConnect", fmt.Sprintf("new connection to %s, %s", connect.Host, marshal))
+	}
+}
+
+func (c *CassandraOp) Attempt(query gocql.RetryableQuery) bool {
+	eval := query.Attempts() < c.MaxRetryAttempt
+	if eval {
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	return eval
+}
+
+func (c *CassandraOp) GetRetryType(err error) gocql.RetryType {
+	return gocql.RetryNextHost
+}
+
 // configureCassandraOp creates and configures a CassandraOp with the provided metadata.
-func configureCassandraOp(name string, meta secret.CassandraMeta) *CassandraOp {
+func configureCassandraOp(meta secret.CassandraMeta) *CassandraOp {
 	op := &CassandraOp{
-		name: name,
-		meta: meta,
+		keyspace: meta.Keyspace,
+		meta:     meta,
 	}
 
 	// Configure the cluster
@@ -116,17 +148,23 @@ func configureCassandraOp(name string, meta secret.CassandraMeta) *CassandraOp {
 
 // configureCluster initializes and configures the gocql cluster based on the metadata.
 func (c *CassandraOp) configureCluster() {
-	c.cluster = gocql.NewCluster(c.meta.Endpoints...)
-
-	// Configure authentication
+	c.cluster = gocql.NewCluster(strings.Split(c.meta.Endpoints[0], ":")[0])
+	c.cluster.Port, _ = strconv.Atoi(strings.Split(c.meta.Endpoints[0], ":")[1])
 	c.cluster.Authenticator = gocql.PasswordAuthenticator{
 		Username: c.meta.Username,
 		Password: c.meta.Password,
 	}
 
-	// Configure SSL and consistency
-	c.cluster.SslOpts = &gocql.SslOptions{CaPath: c.meta.CaPath}
+	c.cluster.SslOpts = &gocql.SslOptions{CaPath: c.meta.CaPath, EnableHostVerification: false}
+	c.cluster.ProtoVersion = 3
 	c.cluster.Consistency = gocql.LocalQuorum
+	c.cluster.DisableInitialHostLookup = false
+	c.cluster.DisableSkipMetadata = true
+	c.cluster.NumConns = 2
+	c.cluster.Compressor = gocql.SnappyCompressor{}
+	c.cluster.Keyspace = c.meta.Keyspace
+	c.cluster.ConnectObserver = c
+	c.cluster.RetryPolicy = c
 }
 
 // NewCassandra creates a new Cassandra connection handler with the specified profile.
@@ -150,8 +188,8 @@ func NewCassandra(profileName string) *Cassandra {
 	}
 
 	// Configure writer and reader operations
-	csd.writer = configureCassandraOp(profileName, profile.Writer)
-	csd.reader = configureCassandraOp(profileName, profile.Reader)
+	csd.writer = configureCassandraOp(profile.Writer)
+	csd.reader = configureCassandraOp(profile.Reader)
 
 	return csd
 }
