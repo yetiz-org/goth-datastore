@@ -1,7 +1,6 @@
 package datastore
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -115,8 +114,7 @@ func (c *CassandraOp) ObserveConnect(connect gocql.ObservedConnect) {
 	if connect.Err != nil {
 		kklogger.WarnJ("datastore:CassandraOp.ObserveConnect", connect.Err.Error())
 	} else {
-		marshal, _ := json.Marshal(connect)
-		kklogger.DebugJ("datastore:CassandraOp.ObserveConnect", fmt.Sprintf("new connection to %s, %s", connect.Host, marshal))
+		kklogger.DebugJ("datastore:CassandraOp.ObserveConnect", fmt.Sprintf("new connection to %s", connect.Host))
 	}
 }
 
