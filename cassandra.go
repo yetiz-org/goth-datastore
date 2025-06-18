@@ -16,9 +16,14 @@ import (
 // It maintains separate connection pools for read and write operations to support different
 // consistency requirements and potentially different endpoints.
 type Cassandra struct {
-	name   string       // Profile name used for configuration
-	writer *CassandraOp // Write operations handler
-	reader *CassandraOp // Read operations handler
+	name    string // Profile name used for configuration
+	profile secret.Cassandra
+	writer  *CassandraOp // Write operations handler
+	reader  *CassandraOp // Read operations handler
+}
+
+func (c *Cassandra) Profile() secret.Cassandra {
+	return c.profile
 }
 
 // Writer returns the CassandraOp configured for write operations.
@@ -182,7 +187,8 @@ func NewCassandra(profileName string) *Cassandra {
 
 	// Create Cassandra handler
 	csd := &Cassandra{
-		name: profileName,
+		name:    profileName,
+		profile: *profile,
 	}
 
 	// Configure writer and reader operations
