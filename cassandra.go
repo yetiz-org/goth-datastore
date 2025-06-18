@@ -53,6 +53,8 @@ type CassandraOp struct {
 	cluster         *gocql.ClusterConfig // Cassandra cluster configuration
 	session         *gocql.Session       // Lazy-loaded session
 	opLock          sync.Mutex           // Mutex to protect session initialization
+	columnsMetadata map[string]CassandraColumnMetadata
+	columnMetaOnce  *sync.Once
 	MaxRetryAttempt int
 }
 
@@ -65,6 +67,10 @@ func (c *CassandraOp) Config() *gocql.ClusterConfig {
 	return c.cluster
 }
 
+func (c *CassandraOp) ColumnsMetadata() map[string]CassandraColumnMetadata {
+	return c.columnsMetadata
+}
+
 func (c *CassandraOp) Exec(f func(session *gocql.Session)) error {
 	if session, err := c.NewSession(); err == nil {
 		defer session.Close()
@@ -72,6 +78,32 @@ func (c *CassandraOp) Exec(f func(session *gocql.Session)) error {
 		return nil
 	} else {
 		return err
+	}
+}
+
+func (c *CassandraOp) columnMetadataInitialize(session *gocql.Session) {
+	iter := session.Query("select keyspace_name, table_name, column_name, kind, type from system_schema.columns where keyspace_name=? order by table_name, column_name", c.keyspace).Iter()
+	columnMetadata := CassandraColumnMetadata{}
+	for {
+		var keyspaceName, tableName, columnName, columnKind, columnType string
+		if iter.Scan(&keyspaceName, &tableName, &columnName, &columnKind, &columnType) {
+			if columnMetadata.tableName == "" {
+				columnMetadata.keyspaceName = keyspaceName
+				columnMetadata.tableName = tableName
+				columnMetadata.Columns = map[string]CassandraColumnMetadataColumn{columnName: {Name: columnName, Kind: columnKind, Type: columnType}}
+			} else if columnMetadata.TableName() == tableName {
+				columnMetadata.Columns[columnName] = CassandraColumnMetadataColumn{Name: columnName, Kind: columnKind, Type: columnType}
+			} else {
+				columnMetadata = CassandraColumnMetadata{}
+				columnMetadata.keyspaceName = keyspaceName
+				columnMetadata.tableName = tableName
+				columnMetadata.Columns = map[string]CassandraColumnMetadataColumn{columnName: {Name: columnName, Kind: columnKind, Type: columnType}}
+			}
+		} else {
+			break
+		}
+
+		c.columnsMetadata[columnMetadata.TableName()] = columnMetadata
 	}
 }
 
@@ -83,6 +115,10 @@ func (c *CassandraOp) NewSession() (*gocql.Session, error) {
 		kklogger.ErrorJ("datastore:CassandraOp.NewSession", err.Error())
 		return nil, err
 	}
+
+	c.columnMetaOnce.Do(func() {
+		c.columnMetadataInitialize(session)
+	})
 
 	return session, nil
 }
@@ -112,6 +148,8 @@ func (c *CassandraOp) Close() {
 		defer c.opLock.Unlock()
 		c.session.Close()
 		c.session = nil
+		c.columnsMetadata = map[string]CassandraColumnMetadata{}
+		c.columnMetaOnce = &sync.Once{}
 	}
 }
 
@@ -139,8 +177,10 @@ func (c *CassandraOp) GetRetryType(err error) gocql.RetryType {
 // configureCassandraOp creates and configures a CassandraOp with the provided metadata.
 func configureCassandraOp(meta secret.CassandraMeta) *CassandraOp {
 	op := &CassandraOp{
-		keyspace: meta.Keyspace,
-		meta:     meta,
+		keyspace:        meta.Keyspace,
+		meta:            meta,
+		columnsMetadata: map[string]CassandraColumnMetadata{},
+		columnMetaOnce:  &sync.Once{},
 	}
 
 	// Configure the cluster
@@ -168,6 +208,54 @@ func (c *CassandraOp) configureCluster() {
 	c.cluster.Keyspace = c.meta.Keyspace
 	c.cluster.ConnectObserver = c
 	c.cluster.RetryPolicy = c
+}
+
+type CassandraColumnMetadata struct {
+	keyspaceName string
+	tableName    string
+	Columns      map[string]CassandraColumnMetadataColumn
+}
+
+func (c *CassandraColumnMetadata) KeyspaceName() string {
+	return c.keyspaceName
+}
+
+func (c *CassandraColumnMetadata) TableName() string {
+	return c.tableName
+}
+
+func (c *CassandraColumnMetadata) PartitionKeys() (keys []string) {
+	for _, column := range c.Columns {
+		if column.IsPartitionKey() {
+			keys = append(keys, column.Name)
+		}
+	}
+
+	return
+}
+
+func (c *CassandraColumnMetadata) ClusteringKeys() (keys []string) {
+	for _, column := range c.Columns {
+		if column.IsClusteringKey() {
+			keys = append(keys, column.Name)
+		}
+	}
+
+	return
+}
+
+type CassandraColumnMetadataColumn struct {
+	Name string
+	Kind string
+	Type string
+}
+
+func (c *CassandraColumnMetadataColumn) IsPartitionKey() bool {
+	return c.Kind == "partition_key"
+}
+
+func (c *CassandraColumnMetadataColumn) IsClusteringKey() bool {
+	return c.Kind == "clustering"
 }
 
 // NewCassandra creates a new Cassandra connection handler with the specified profile.
