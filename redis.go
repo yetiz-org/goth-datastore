@@ -77,7 +77,7 @@ func (o *RedisOp) Exec(f func(conn redis.Conn)) error {
 
 func (o *RedisOp) _Do(cmd string, args ...interface{}) *RedisResponse {
 	conn := o.Conn()
-	defer o.Close()
+	defer conn.Close()
 	if r, err := conn.Do(cmd, args...); err == nil {
 		if r == nil {
 			return &RedisResponse{
