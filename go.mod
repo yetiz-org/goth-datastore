@@ -5,7 +5,7 @@ go 1.23
 toolchain go1.24.0
 
 require (
-	github.com/gocql/gocql v0.0.0-20210504150947-558dfae50b5d
+	github.com/gocql/gocql v1.6.0
 	github.com/gomodule/redigo v1.9.2
 	github.com/stretchr/testify v1.8.4
 	github.com/yetiz-org/goth-kklogger v0.0.0-20250611122328-03d2bbd5bc69
@@ -21,7 +21,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
-	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
+	github.com/golang/snappy v0.0.3 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
