@@ -40,6 +40,10 @@ type RedisOp struct {
 	opLock sync.Mutex
 }
 
+func (o *RedisOp) Meta() secret.RedisMeta {
+	return o.meta
+}
+
 func (o *RedisOp) Pool() *redis.Pool {
 	return o.pool
 }
