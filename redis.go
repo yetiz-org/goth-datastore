@@ -187,6 +187,17 @@ func (o *RedisOp) HVals(key interface{}) *RedisResponse {
 	return o._Do("HVALS", key)
 }
 
+func (o *RedisOp) HScan(key interface{}, cursor int64, match string, count int64) *RedisResponse {
+	args := []interface{}{key, cursor}
+	if match != "" {
+		args = append(args, "MATCH", match)
+	}
+	if count > 0 {
+		args = append(args, "COUNT", count)
+	}
+	return o._Do("HSCAN", args...)
+}
+
 func (o *RedisOp) Incr(key interface{}) *RedisResponse {
 	return o._Do("INCR", key)
 }
@@ -197,6 +208,262 @@ func (o *RedisOp) IncrBy(key interface{}, val int64) *RedisResponse {
 
 func (o *RedisOp) Publish(key interface{}, val interface{}) *RedisResponse {
 	return o._Do("PUBLISH", key, val)
+}
+
+// String 系列補充指令
+func (o *RedisOp) Append(key interface{}, val interface{}) *RedisResponse {
+	return o._Do("APPEND", key, val)
+}
+
+func (o *RedisOp) StrLen(key interface{}) *RedisResponse {
+	return o._Do("STRLEN", key)
+}
+
+func (o *RedisOp) GetRange(key interface{}, start, end int64) *RedisResponse {
+	return o._Do("GETRANGE", key, start, end)
+}
+
+func (o *RedisOp) SetRange(key interface{}, offset int64, val interface{}) *RedisResponse {
+	return o._Do("SETRANGE", key, offset, val)
+}
+
+// Key 系列指令補足
+func (o *RedisOp) Copy(src, dst interface{}) *RedisResponse {
+	return o._Do("COPY", src, dst)
+}
+
+func (o *RedisOp) Decr(key interface{}) *RedisResponse {
+	return o._Do("DECR", key)
+}
+
+func (o *RedisOp) DecrBy(key interface{}, val int64) *RedisResponse {
+	return o._Do("DECRBY", key, val)
+}
+
+func (o *RedisOp) Dump(key interface{}) *RedisResponse {
+	return o._Do("DUMP", key)
+}
+
+func (o *RedisOp) TTL(key interface{}) *RedisResponse {
+	return o._Do("TTL", key)
+}
+
+func (o *RedisOp) PTTL(key interface{}) *RedisResponse {
+	return o._Do("PTTL", key)
+}
+
+func (o *RedisOp) Type(key interface{}) *RedisResponse {
+	return o._Do("TYPE", key)
+}
+
+func (o *RedisOp) RandomKey() *RedisResponse {
+	return o._Do("RANDOMKEY")
+}
+
+func (o *RedisOp) Rename(oldKey, newKey interface{}) *RedisResponse {
+	return o._Do("RENAME", oldKey, newKey)
+}
+
+func (o *RedisOp) RenameNX(oldKey, newKey interface{}) *RedisResponse {
+	return o._Do("RENAMENX", oldKey, newKey)
+}
+
+func (o *RedisOp) Touch(key ...interface{}) *RedisResponse {
+	return o._Do("TOUCH", key...)
+}
+
+func (o *RedisOp) Unlink(key ...interface{}) *RedisResponse {
+	return o._Do("UNLINK", key...)
+}
+
+func (o *RedisOp) Persist(key interface{}) *RedisResponse {
+	return o._Do("PERSIST", key)
+}
+
+// List 系列指令
+func (o *RedisOp) LIndex(key interface{}, index int64) *RedisResponse {
+	return o._Do("LINDEX", key, index)
+}
+
+func (o *RedisOp) LInsert(key interface{}, where string, pivot, element interface{}) *RedisResponse {
+	return o._Do("LINSERT", key, where, pivot, element)
+}
+
+func (o *RedisOp) LLen(key interface{}) *RedisResponse {
+	return o._Do("LLEN", key)
+}
+
+func (o *RedisOp) LMove(source, destination interface{}, srcWhere, dstWhere string) *RedisResponse {
+	return o._Do("LMOVE", source, destination, srcWhere, dstWhere)
+}
+
+func (o *RedisOp) LMPop(count int64, where string, key ...interface{}) *RedisResponse {
+	args := []interface{}{count, where}
+	args = append(args, key...)
+	return o._Do("LMPOP", args...)
+}
+
+func (o *RedisOp) LPop(key interface{}) *RedisResponse {
+	return o._Do("LPOP", key)
+}
+
+func (o *RedisOp) LPos(key, element interface{}) *RedisResponse {
+	return o._Do("LPOS", key, element)
+}
+
+func (o *RedisOp) LPush(key interface{}, val ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, val...)
+	return o._Do("LPUSH", args...)
+}
+
+func (o *RedisOp) LPushX(key interface{}, val ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, val...)
+	return o._Do("LPUSHX", args...)
+}
+
+func (o *RedisOp) LRange(key interface{}, start, stop int64) *RedisResponse {
+	return o._Do("LRANGE", key, start, stop)
+}
+
+func (o *RedisOp) LRem(key interface{}, count int64, element interface{}) *RedisResponse {
+	return o._Do("LREM", key, count, element)
+}
+
+func (o *RedisOp) LSet(key interface{}, index int64, element interface{}) *RedisResponse {
+	return o._Do("LSET", key, index, element)
+}
+
+func (o *RedisOp) LTrim(key interface{}, start, stop int64) *RedisResponse {
+	return o._Do("LTRIM", key, start, stop)
+}
+
+func (o *RedisOp) RPop(key interface{}) *RedisResponse {
+	return o._Do("RPOP", key)
+}
+
+func (o *RedisOp) RPopLPush(source, destination interface{}) *RedisResponse {
+	return o._Do("RPOPLPUSH", source, destination)
+}
+
+func (o *RedisOp) RPush(key interface{}, val ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, val...)
+	return o._Do("RPUSH", args...)
+}
+
+func (o *RedisOp) RPushX(key interface{}, val ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, val...)
+	return o._Do("RPUSHX", args...)
+}
+
+// Set 系列指令
+func (o *RedisOp) SAdd(key interface{}, member ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, member...)
+	return o._Do("SADD", args...)
+}
+
+func (o *RedisOp) SCard(key interface{}) *RedisResponse {
+	return o._Do("SCARD", key)
+}
+
+func (o *RedisOp) SDiff(key ...interface{}) *RedisResponse {
+	return o._Do("SDIFF", key...)
+}
+
+func (o *RedisOp) SDiffStore(destination interface{}, key ...interface{}) *RedisResponse {
+	args := []interface{}{destination}
+	args = append(args, key...)
+	return o._Do("SDIFFSTORE", args...)
+}
+
+func (o *RedisOp) SInter(key ...interface{}) *RedisResponse {
+	return o._Do("SINTER", key...)
+}
+
+func (o *RedisOp) SInterCard(key ...interface{}) *RedisResponse {
+	return o._Do("SINTERCARD", key...)
+}
+
+func (o *RedisOp) SInterStore(destination interface{}, key ...interface{}) *RedisResponse {
+	args := []interface{}{destination}
+	args = append(args, key...)
+	return o._Do("SINTERSTORE", args...)
+}
+
+func (o *RedisOp) SIsMember(key, member interface{}) *RedisResponse {
+	return o._Do("SISMEMBER", key, member)
+}
+
+func (o *RedisOp) SMembers(key interface{}) *RedisResponse {
+	return o._Do("SMEMBERS", key)
+}
+
+func (o *RedisOp) SMIsMember(key interface{}, member ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, member...)
+	return o._Do("SMISMEMBER", args...)
+}
+
+func (o *RedisOp) SMove(source, destination, member interface{}) *RedisResponse {
+	return o._Do("SMOVE", source, destination, member)
+}
+
+func (o *RedisOp) SPop(key interface{}) *RedisResponse {
+	return o._Do("SPOP", key)
+}
+
+func (o *RedisOp) SRandMember(key interface{}) *RedisResponse {
+	return o._Do("SRANDMEMBER", key)
+}
+
+func (o *RedisOp) SRem(key interface{}, member ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, member...)
+	return o._Do("SREM", args...)
+}
+
+func (o *RedisOp) SScan(key interface{}, cursor int64, match string, count int64) *RedisResponse {
+	args := []interface{}{key, cursor}
+	if match != "" {
+		args = append(args, "MATCH", match)
+	}
+	if count > 0 {
+		args = append(args, "COUNT", count)
+	}
+	return o._Do("SSCAN", args...)
+}
+
+func (o *RedisOp) SUnion(key ...interface{}) *RedisResponse {
+	return o._Do("SUNION", key...)
+}
+
+func (o *RedisOp) SUnionStore(destination interface{}, key ...interface{}) *RedisResponse {
+	args := []interface{}{destination}
+	args = append(args, key...)
+	return o._Do("SUNIONSTORE", args...)
+}
+
+func (o *RedisOp) FlushDB() *RedisResponse {
+	return o._Do("FLUSHDB")
+}
+
+func (o *RedisOp) FlushAll() *RedisResponse {
+	return o._Do("FLUSHALL")
+}
+
+func (o *RedisOp) Scan(cursor int64, match string, count int64) *RedisResponse {
+	args := []interface{}{cursor}
+	if match != "" {
+		args = append(args, "MATCH", match)
+	}
+	if count > 0 {
+		args = append(args, "COUNT", count)
+	}
+	return o._Do("SCAN", args...)
 }
 
 func (o *RedisOp) Ping() *RedisResponse {
@@ -317,4 +584,154 @@ func newRedisPool(meta secret.RedisMeta) *redis.Pool {
 	}
 
 	return redisPool
+}
+
+// Sorted Set 系列指令
+func (o *RedisOp) ZAdd(key interface{}, score float64, member interface{}, pairs ...interface{}) *RedisResponse {
+	args := []interface{}{key, score, member}
+	args = append(args, pairs...)
+	return o._Do("ZADD", args...)
+}
+
+func (o *RedisOp) ZCard(key interface{}) *RedisResponse {
+	return o._Do("ZCARD", key)
+}
+
+func (o *RedisOp) ZCount(key interface{}, min, max string) *RedisResponse {
+	return o._Do("ZCOUNT", key, min, max)
+}
+
+func (o *RedisOp) ZDiff(key ...interface{}) *RedisResponse {
+	return o._Do("ZDIFF", key...)
+}
+
+func (o *RedisOp) ZDiffStore(destination interface{}, key ...interface{}) *RedisResponse {
+	args := []interface{}{destination}
+	args = append(args, key...)
+	return o._Do("ZDIFFSTORE", args...)
+}
+
+func (o *RedisOp) ZIncrBy(key interface{}, increment float64, member interface{}) *RedisResponse {
+	return o._Do("ZINCRBY", key, increment, member)
+}
+
+func (o *RedisOp) ZInter(key ...interface{}) *RedisResponse {
+	return o._Do("ZINTER", key...)
+}
+
+func (o *RedisOp) ZInterCard(key ...interface{}) *RedisResponse {
+	return o._Do("ZINTERCARD", key...)
+}
+
+func (o *RedisOp) ZInterStore(destination interface{}, key ...interface{}) *RedisResponse {
+	args := []interface{}{destination}
+	args = append(args, key...)
+	return o._Do("ZINTERSTORE", args...)
+}
+
+func (o *RedisOp) ZLexCount(key interface{}, min, max string) *RedisResponse {
+	return o._Do("ZLEXCOUNT", key, min, max)
+}
+
+func (o *RedisOp) ZMPop(count int64, where string, key ...interface{}) *RedisResponse {
+	args := []interface{}{count, where}
+	args = append(args, key...)
+	return o._Do("ZMPOP", args...)
+}
+
+func (o *RedisOp) ZMScore(key interface{}, member ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, member...)
+	return o._Do("ZMSCORE", args...)
+}
+
+func (o *RedisOp) ZPopMax(key interface{}) *RedisResponse {
+	return o._Do("ZPOPMAX", key)
+}
+
+func (o *RedisOp) ZPopMin(key interface{}) *RedisResponse {
+	return o._Do("ZPOPMIN", key)
+}
+
+func (o *RedisOp) ZRandMember(key interface{}) *RedisResponse {
+	return o._Do("ZRANDMEMBER", key)
+}
+
+func (o *RedisOp) ZRange(key interface{}, start, stop int64) *RedisResponse {
+	return o._Do("ZRANGE", key, start, stop)
+}
+
+func (o *RedisOp) ZRangeByLex(key interface{}, min, max string) *RedisResponse {
+	return o._Do("ZRANGEBYLEX", key, min, max)
+}
+
+func (o *RedisOp) ZRangeByScore(key interface{}, min, max string) *RedisResponse {
+	return o._Do("ZRANGEBYSCORE", key, min, max)
+}
+
+func (o *RedisOp) ZRangeStore(dst interface{}, src interface{}, min, max int64) *RedisResponse {
+	return o._Do("ZRANGESTORE", dst, src, min, max)
+}
+
+func (o *RedisOp) ZRevRange(key interface{}, start, stop int64) *RedisResponse {
+	return o._Do("ZREVRANGE", key, start, stop)
+}
+
+func (o *RedisOp) ZRevRangeByLex(key interface{}, max, min string) *RedisResponse {
+	return o._Do("ZREVRANGEBYLEX", key, max, min)
+}
+
+func (o *RedisOp) ZRevRangeByScore(key interface{}, max, min string) *RedisResponse {
+	return o._Do("ZREVRANGEBYSCORE", key, max, min)
+}
+
+func (o *RedisOp) ZRank(key, member interface{}) *RedisResponse {
+	return o._Do("ZRANK", key, member)
+}
+
+func (o *RedisOp) ZRem(key interface{}, member ...interface{}) *RedisResponse {
+	args := []interface{}{key}
+	args = append(args, member...)
+	return o._Do("ZREM", args...)
+}
+
+func (o *RedisOp) ZRemRangeByLex(key interface{}, min, max string) *RedisResponse {
+	return o._Do("ZREMRANGEBYLEX", key, min, max)
+}
+
+func (o *RedisOp) ZRemRangeByRank(key interface{}, start, stop int64) *RedisResponse {
+	return o._Do("ZREMRANGEBYRANK", key, start, stop)
+}
+
+func (o *RedisOp) ZRemRangeByScore(key interface{}, min, max string) *RedisResponse {
+	return o._Do("ZREMRANGEBYSCORE", key, min, max)
+}
+
+func (o *RedisOp) ZRevRank(key, member interface{}) *RedisResponse {
+	return o._Do("ZREVRANK", key, member)
+}
+
+func (o *RedisOp) ZScan(key interface{}, cursor int64, match string, count int64) *RedisResponse {
+	args := []interface{}{key, cursor}
+	if match != "" {
+		args = append(args, "MATCH", match)
+	}
+	if count > 0 {
+		args = append(args, "COUNT", count)
+	}
+	return o._Do("ZSCAN", args...)
+}
+
+func (o *RedisOp) ZScore(key, member interface{}) *RedisResponse {
+	return o._Do("ZSCORE", key, member)
+}
+
+func (o *RedisOp) ZUnion(key ...interface{}) *RedisResponse {
+	return o._Do("ZUNION", key...)
+}
+
+func (o *RedisOp) ZUnionStore(destination interface{}, key ...interface{}) *RedisResponse {
+	args := []interface{}{destination}
+	args = append(args, key...)
+	return o._Do("ZUNIONSTORE", args...)
 }
