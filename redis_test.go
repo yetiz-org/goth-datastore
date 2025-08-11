@@ -142,17 +142,20 @@ func TestLoadRedisExampleSecret(t *testing.T) {
 	})
 }
 
-// TestRedisKeyCommands 測試 Key 系列補足指令
+// TestRedisKeyCommands Key command tests
 func TestRedisKeyCommands(t *testing.T) {
-	// Skip if no Redis available
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
+    // Save original secret path and restore it after test
+    originalPath := secret.PATH
+    defer func() {
+        secret.PATH = originalPath
+    }()
 
-	redis := NewRedis("test")
-	if redis == nil {
-		t.Skip("Redis not available for testing")
-	}
+    // Set secret path to the example directory
+    wd, _ := os.Getwd()
+    secret.PATH = filepath.Join(wd, "example")
+
+    redis := NewRedis("test")
+    assert.NotNil(t, redis)
 
 	t.Run("Copy", func(t *testing.T) {
 		redis.Master().Set("test_key", "test_value")
@@ -373,17 +376,20 @@ func TestRedisKeyCommands(t *testing.T) {
 	})
 }
 
-// TestRedisListCommands 測試 List 系列指令
+// TestRedisListCommands List command tests
 func TestRedisListCommands(t *testing.T) {
-	// Skip if no Redis available
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
+    // Save original secret path and restore it after test
+    originalPath := secret.PATH
+    defer func() {
+        secret.PATH = originalPath
+    }()
 
-	redis := NewRedis("test")
-	if redis == nil {
-		t.Skip("Redis not available for testing")
-	}
+    // Set secret path to the example directory
+    wd, _ := os.Getwd()
+    secret.PATH = filepath.Join(wd, "example")
+
+    redis := NewRedis("test")
+    assert.NotNil(t, redis)
 
 	t.Run("LPush_LLen_LIndex", func(t *testing.T) {
 		listKey := "test_list"
@@ -614,17 +620,20 @@ func TestRedisListCommands(t *testing.T) {
 	})
 }
 
-// TestRedisSetCommands 測試 Set 系列指令
+// TestRedisSetCommands Set command tests
 func TestRedisSetCommands(t *testing.T) {
-	// Skip if no Redis available
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
+    // Save original secret path and restore it after test
+    originalPath := secret.PATH
+    defer func() {
+        secret.PATH = originalPath
+    }()
 
-	redis := NewRedis("test")
-	if redis == nil {
-		t.Skip("Redis not available for testing")
-	}
+    // Set secret path to the example directory
+    wd, _ := os.Getwd()
+    secret.PATH = filepath.Join(wd, "example")
+
+    redis := NewRedis("test")
+    assert.NotNil(t, redis)
 
 	t.Run("SAdd_SCard_SMembers", func(t *testing.T) {
 		setKey := "test_set"
@@ -844,17 +853,20 @@ func TestRedisSetCommands(t *testing.T) {
 	})
 }
 
-// TestRedisSortedSetCommands 測試 Sorted Set 系列指令
+// TestRedisSortedSetCommands Sorted Set command tests
 func TestRedisSortedSetCommands(t *testing.T) {
-	// Skip if no Redis available
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
+    // Save original secret path and restore it after test
+    originalPath := secret.PATH
+    defer func() {
+        secret.PATH = originalPath
+    }()
 
-	redis := NewRedis("test")
-	if redis == nil {
-		t.Skip("Redis not available for testing")
-	}
+    // Set secret path to the example directory
+    wd, _ := os.Getwd()
+    secret.PATH = filepath.Join(wd, "example")
+
+    redis := NewRedis("test")
+    assert.NotNil(t, redis)
 
 	t.Run("ZAdd_ZCard_ZRange", func(t *testing.T) {
 		zsetKey := "test_zset"
@@ -1273,17 +1285,20 @@ func TestRedisSortedSetCommands(t *testing.T) {
 	})
 }
 
-// TestRedisHashCommands 測試 Hash 系列補足指令
+// TestRedisHashCommands Hash command tests
 func TestRedisHashCommands(t *testing.T) {
-	// Skip if no Redis available
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
+    // Save original secret path and restore it after test
+    originalPath := secret.PATH
+    defer func() {
+        secret.PATH = originalPath
+    }()
 
-	redis := NewRedis("test")
-	if redis == nil {
-		t.Skip("Redis not available for testing")
-	}
+    // Set secret path to the example directory
+    wd, _ := os.Getwd()
+    secret.PATH = filepath.Join(wd, "example")
+
+    redis := NewRedis("test")
+    assert.NotNil(t, redis)
 
 	t.Run("HScan", func(t *testing.T) {
 		hashKey := "test_hash"
@@ -1304,5 +1319,110 @@ func TestRedisHashCommands(t *testing.T) {
 		
 		// Cleanup
 		redis.Master().Delete(hashKey)
+	})
+}
+
+// TestRedisEval Script command tests
+func TestRedisEval(t *testing.T) {
+	// Save original secret path and restore it after test
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	// Set secret path to the example directory
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+
+	redis := NewRedis("test")
+	assert.NotNil(t, redis)
+
+	t.Run("EvalBasicScript", func(t *testing.T) {
+		// Simple script that returns a string
+		script := "return 'hello world'"
+		response := redis.Master().Eval(script, []interface{}{}, []interface{}{})
+		assert.NoError(t, response.Error)
+		assert.Equal(t, "hello world", response.GetString())
+	})
+
+	t.Run("EvalWithKeys", func(t *testing.T) {
+		// Set up test data
+		testKey := "eval_test_key"
+		redis.Master().Set(testKey, "test_value")
+		
+		// Script that returns the value of KEYS[1]
+		script := "return redis.call('GET', KEYS[1])"
+		keys := []interface{}{testKey}
+		response := redis.Master().Eval(script, keys, []interface{}{})
+		assert.NoError(t, response.Error)
+		assert.Equal(t, "test_value", response.GetString())
+		
+		// Cleanup
+		redis.Master().Delete(testKey)
+	})
+
+	t.Run("EvalWithArgs", func(t *testing.T) {
+		// Script that uses ARGV arguments
+		script := "return ARGV[1] .. ' ' .. ARGV[2]"
+		args := []interface{}{"hello", "redis"}
+		response := redis.Master().Eval(script, []interface{}{}, args)
+		assert.NoError(t, response.Error)
+		assert.Equal(t, "hello redis", response.GetString())
+	})
+
+	t.Run("EvalWithKeysAndArgs", func(t *testing.T) {
+		// Set up test data
+		testKey := "eval_counter"
+		redis.Master().Set(testKey, "10")
+		
+		// Script that increments a key by the amount in ARGV[1]
+		script := `
+			local current = redis.call('GET', KEYS[1]) or 0
+			local increment = tonumber(ARGV[1])
+			local result = tonumber(current) + increment
+			redis.call('SET', KEYS[1], result)
+			return result
+		`
+		keys := []interface{}{testKey}
+		args := []interface{}{"5"}
+		response := redis.Master().Eval(script, keys, args)
+		assert.NoError(t, response.Error)
+		assert.Equal(t, int64(15), response.GetInt64())
+		
+		// Verify the value was actually set
+		getResp := redis.Master().Get(testKey)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "15", getResp.GetString())
+		
+		// Cleanup
+		redis.Master().Delete(testKey)
+	})
+
+	t.Run("EvalReturnNumber", func(t *testing.T) {
+		// Script that returns a number
+		script := "return 42"
+		response := redis.Master().Eval(script, []interface{}{}, []interface{}{})
+		assert.NoError(t, response.Error)
+		assert.Equal(t, int64(42), response.GetInt64())
+	})
+
+	t.Run("EvalReturnArray", func(t *testing.T) {
+		// Script that returns an array
+		script := "return {'item1', 'item2', 'item3'}"
+		response := redis.Master().Eval(script, []interface{}{}, []interface{}{})
+		assert.NoError(t, response.Error)
+		
+		slice := response.GetSlice()
+		assert.Equal(t, 3, len(slice))
+		assert.Equal(t, "item1", slice[0].GetString())
+		assert.Equal(t, "item2", slice[1].GetString())
+		assert.Equal(t, "item3", slice[2].GetString())
+	})
+
+	t.Run("EvalScriptError", func(t *testing.T) {
+		// Script with syntax error
+		script := "return invalid_syntax("
+		response := redis.Master().Eval(script, []interface{}{}, []interface{}{})
+		assert.Error(t, response.Error)
 	})
 }

@@ -9,12 +9,8 @@ import (
 	secret "github.com/yetiz-org/goth-secret"
 )
 
-// TestRedisPipeline 基本批次操作流程
+// TestRedisPipeline Basic batch pipeline flow
 func TestRedisPipeline(t *testing.T) {
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
-
 	// Save original secret path and restore it after test
 	originalPath := secret.PATH
 	defer func() {
@@ -26,12 +22,9 @@ func TestRedisPipeline(t *testing.T) {
 	secret.PATH = filepath.Join(wd, "example")
 
 	r := NewRedis("test")
-	if r == nil {
-		t.Skip("Redis not available for testing")
-	}
 
 	t.Run("BasicPipelineOperations", func(t *testing.T) {
-		// 確保乾淨的測試環境
+		// Ensure a clean test environment
 		r.Master().Delete("p_key1", "p_key2", "p_key3", "p_counter")
 
 		cmds := []RedisPipelineCmd{
@@ -40,14 +33,14 @@ func TestRedisPipeline(t *testing.T) {
 			{Cmd: "SET", Args: []interface{}{"p_counter", "10"}},
 			{Cmd: "GET", Args: []interface{}{"p_key1"}},
 			{Cmd: "GET", Args: []interface{}{"p_key2"}},
-			{Cmd: "GET", Args: []interface{}{"p_key3"}}, // 不存在的 key
+			{Cmd: "GET", Args: []interface{}{"p_key3"}}, // non-existing key
 			{Cmd: "INCR", Args: []interface{}{"p_counter"}},
 		}
 
 		resps := r.Master().Pipeline(cmds...)
 		assert.Equal(t, 7, len(resps))
 
-		// 驗證每個回應都是獨立且正確的
+		// Verify each response is independent and correct
 		assert.NoError(t, resps[0].Error)
 		assert.Equal(t, "OK", resps[0].GetString())
 
@@ -68,12 +61,12 @@ func TestRedisPipeline(t *testing.T) {
 		assert.NoError(t, resps[6].Error)
 		assert.Equal(t, int64(11), resps[6].GetInt64())
 
-		// 清理
+		// Cleanup
 		r.Master().Delete("p_key1", "p_key2", "p_key3", "p_counter")
 	})
 
 	t.Run("PipelineWithDifferentDataTypes", func(t *testing.T) {
-		// 測試不同資料類型的回應確實不同
+		// Ensure responses differ across data types
 		r.Master().Delete("p_string", "p_list", "p_hash", "p_set")
 
 		cmds := []RedisPipelineCmd{
@@ -90,7 +83,7 @@ func TestRedisPipeline(t *testing.T) {
 		resps := r.Master().Pipeline(cmds...)
 		assert.Equal(t, 8, len(resps))
 
-		// 驗證設置操作
+		// Verify set operations
 		assert.NoError(t, resps[0].Error)
 		assert.Equal(t, "OK", resps[0].GetString())
 
@@ -103,7 +96,7 @@ func TestRedisPipeline(t *testing.T) {
 		assert.NoError(t, resps[3].Error)
 		assert.Equal(t, int64(2), resps[3].GetInt64())
 
-		// 驗證查詢操作 - 每個回應的資料都不同
+		// Verify query operations - each response data type differs
 		assert.NoError(t, resps[4].Error)
 		assert.Equal(t, "hello", resps[4].GetString())
 
@@ -116,17 +109,13 @@ func TestRedisPipeline(t *testing.T) {
 		assert.NoError(t, resps[7].Error)
 		assert.Equal(t, int64(2), resps[7].GetInt64())
 
-		// 清理
+		// Cleanup
 		r.Master().Delete("p_string", "p_list", "p_hash", "p_set")
 	})
 }
 
-// TestRedisPipelineEmpty 空指令集行為
+// TestRedisPipelineEmpty Empty command set behavior
 func TestRedisPipelineEmpty(t *testing.T) {
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
-
 	// Save original secret path and restore it after test
 	originalPath := secret.PATH
 	defer func() {
@@ -138,21 +127,14 @@ func TestRedisPipelineEmpty(t *testing.T) {
 	secret.PATH = filepath.Join(wd, "example")
 
 	r := NewRedis("test")
-	if r == nil {
-		t.Skip("Redis not available for testing")
-	}
 
 	var cmds []RedisPipelineCmd
 	resps := r.Master().Pipeline(cmds...)
 	assert.Nil(t, resps)
 }
 
-// TestRedisPipelineWithServerError 服務端錯誤回應仍可保持順序與後續回應
+// TestRedisPipelineWithServerError Server-side error responses still preserve order and subsequent responses
 func TestRedisPipelineWithServerError(t *testing.T) {
-	if os.Getenv("REDIS_TEST") != "1" {
-		t.Skip("Skipping Redis tests - set REDIS_TEST=1 to run")
-	}
-
 	// Save original secret path and restore it after test
 	originalPath := secret.PATH
 	defer func() {
@@ -164,22 +146,17 @@ func TestRedisPipelineWithServerError(t *testing.T) {
 	secret.PATH = filepath.Join(wd, "example")
 
 	r := NewRedis("test")
-	if r == nil {
-		t.Skip("Redis not available for testing")
-	}
 
-	// 準備資料
+	// Prepare data
 	r.Master().Delete("p_key_err")
 	setOK := r.Master().Set("p_key_err", "ok")
-	if setOK.Error != nil {
-		t.Skip("Redis not available for testing")
-	}
+	assert.NoError(t, setOK.Error)
 
 	cmds := []RedisPipelineCmd{
 		{Cmd: "SET", Args: []interface{}{"p_key_err", "ok2"}},
-		{Cmd: "WRONGCMD", Args: []interface{}{"x"}}, // 無效指令，將導致伺服器錯誤
+		{Cmd: "WRONGCMD", Args: []interface{}{"x"}}, // Invalid command that will cause a server error
 		{Cmd: "GET", Args: []interface{}{"p_key_err"}},
-		{Cmd: "INCR", Args: []interface{}{"p_key_err"}}, // 這會失敗，因為 value 不是數字
+		{Cmd: "INCR", Args: []interface{}{"p_key_err"}}, // This will fail because the value is not a number
 		{Cmd: "SET", Args: []interface{}{"p_key_err", "123"}},
 		{Cmd: "GET", Args: []interface{}{"p_key_err"}},
 	}
@@ -187,28 +164,28 @@ func TestRedisPipelineWithServerError(t *testing.T) {
 	resps := r.Master().Pipeline(cmds...)
 	assert.Equal(t, 6, len(resps))
 
-	// 第一個 SET 應成功
+	// The first SET should succeed
 	assert.NoError(t, resps[0].Error)
 	assert.Equal(t, "OK", resps[0].GetString())
 
-	// 第二個為錯誤指令，應回傳錯誤
+	// The second is an invalid command; should return an error
 	assert.Error(t, resps[1].Error)
 
-	// 第三個 GET 仍應取得結果，且順序正確
+	// The third GET should still get the result, order preserved
 	assert.NoError(t, resps[2].Error)
 	assert.Equal(t, "ok2", resps[2].GetString())
 
-	// 第四個 INCR 會失敗（因為值不是數字）
+	// The fourth INCR should fail (value is not a number)
 	assert.Error(t, resps[3].Error)
 
-	// 第五個 SET 應成功
+	// The fifth SET should succeed
 	assert.NoError(t, resps[4].Error)
 	assert.Equal(t, "OK", resps[4].GetString())
 
-	// 第六個 GET 應取得最後設置的值
+	// The sixth GET should retrieve the last set value
 	assert.NoError(t, resps[5].Error)
 	assert.Equal(t, "123", resps[5].GetString())
 
-	// 清理
+	// Cleanup
 	r.Master().Delete("p_key_err")
 }
