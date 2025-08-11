@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	secret "github.com/yetiz-org/goth-secret"
 	"strconv"
 	"sync"
 	"time"
+
+	secret "github.com/yetiz-org/goth-secret"
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/yetiz-org/goth-kklogger"
@@ -70,6 +71,12 @@ func (o *RedisOp) IdleCount() int {
 
 var RedisNotFound = fmt.Errorf("not_found")
 
+// RedisPipelineCmd 用於描述一個 Pipeline 中的單一指令與其參數
+type RedisPipelineCmd struct {
+	Cmd  string
+	Args []interface{}
+}
+
 func (o *RedisOp) Exec(f func(conn redis.Conn)) error {
 	if conn, err := o.pool.GetContext(context.Background()); err != nil {
 		return err
@@ -77,6 +84,71 @@ func (o *RedisOp) Exec(f func(conn redis.Conn)) error {
 		f(conn)
 		return conn.Close()
 	}
+}
+
+// Pipeline 以 Pipeline 模式送出多筆指令，並依序回傳每一筆指令的回應
+// 注意：回傳結果的順序與傳入 cmds 的順序一致
+func (o *RedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
+	if len(cmds) == 0 {
+		return nil
+	}
+
+	conn := o.Conn()
+	defer conn.Close()
+
+	n := len(cmds)
+	responses := make([]*RedisResponse, n)
+	sent := make([]bool, n)
+
+	// 逐筆 Send 指令
+	for i, c := range cmds {
+		if err := conn.Send(c.Cmd, c.Args...); err != nil {
+			kklogger.ErrorJ("datastore:RedisOp.Pipeline#send!io", err.Error())
+			// 當 Send 失敗，後續指令不再送出，直接將當前與後續都標記為錯誤
+			for j := i; j < n; j++ {
+				responses[j] = &RedisResponse{Error: fmt.Errorf("pipeline send failed at cmd %d: %w", j, err)}
+			}
+			return responses
+		}
+		sent[i] = true
+	}
+
+	// Flush 將已送出的指令一次送出到 Redis
+	if err := conn.Flush(); err != nil {
+		kklogger.ErrorJ("datastore:RedisOp.Pipeline#flush!io", err.Error())
+		for i := 0; i < n; i++ {
+			if responses[i] == nil {
+				responses[i] = &RedisResponse{Error: fmt.Errorf("pipeline flush failed: %w", err)}
+			}
+		}
+		return responses
+	}
+
+	// 依序接收回應，與送出順序對齊
+	for i := 0; i < n; i++ {
+		if !sent[i] {
+			// 正常流程不會進到這裡（因為前面 Send 失敗已經 return）
+			continue
+		}
+
+		r, err := conn.Receive()
+		if err != nil {
+			kklogger.ErrorJ("datastore:RedisOp.Pipeline#receive!io", err.Error())
+			responses[i] = &RedisResponse{Error: err}
+			continue
+		}
+
+		if r == nil {
+			responses[i] = &RedisResponse{Error: RedisNotFound}
+		} else {
+			responses[i] = &RedisResponse{
+				RedisResponseEntity: RedisResponseEntity{data: r},
+				Error:               nil,
+			}
+		}
+	}
+
+	return responses
 }
 
 func (o *RedisOp) _Do(cmd string, args ...interface{}) *RedisResponse {
