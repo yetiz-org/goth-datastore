@@ -1300,25 +1300,361 @@ func TestRedisHashCommands(t *testing.T) {
     redis := NewRedis("test")
     assert.NotNil(t, redis)
 
-	t.Run("HScan", func(t *testing.T) {
+	// Clean test environment
+	defer func() {
+		redis.Master().Delete("test_hash", "test_hash_2", "test_hash_incr", "test_hash_scan")
+		redis.Master().Close()
+	}()
+
+	t.Run("HSet_HGet_Basic_Set_And_Get", func(t *testing.T) {
+		hashKey := "test_hash"
+		field := "test_field"
+		value := "test_value"
+		
+		// HSet - set hash fieldvalue
+		setResp := redis.Master().HSet(hashKey, field, value)
+		assert.NoError(t, setResp.Error)
+		assert.Equal(t, int64(1), setResp.GetInt64()) // newfieldshouldreturn 1
+
+		// HGet - get hash fieldvalue
+		getResp := redis.Master().HGet(hashKey, field)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, value, getResp.GetString())
+
+		// HSet updateexistingfield
+		setResp2 := redis.Master().HSet(hashKey, field, "updated_value")
+		assert.NoError(t, setResp2.Error)
+		assert.Equal(t, int64(0), setResp2.GetInt64()) // updateexistingfieldshouldreturn 0
+
+		// Verifyupdateresult
+		getResp2 := redis.Master().HGet(hashKey, field)
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, "updated_value", getResp2.GetString())
+
+		// Testgetnon-existentfield
+		nonExistResp := redis.Master().HGet(hashKey, "non_exist")
+		assert.True(t, nonExistResp.RecordNotFound())
+	})
+
+	t.Run("HMSet_HMGet_Batch_Set_And_Get", func(t *testing.T) {
 		hashKey := "test_hash"
 		
-		// Setup test data
+		// HMSet - batchsetmultiplefield
+		hashData := map[interface{}]interface{}{
+			"field1": "value1",
+			"field2": "value2",
+			"field3": "value3",
+			"number": "123",
+		}
+		
+		hmsetResp := redis.Master().HMSet(hashKey, hashData)
+		assert.NoError(t, hmsetResp.Error)
+
+		// HMGet - batchgetmultiplefield
+		hmgetResp := redis.Master().HMGet(hashKey, "field1", "field2", "field3", "number")
+		assert.NoError(t, hmgetResp.Error)
+		
+		values := hmgetResp.GetSlice()
+		assert.Len(t, values, 4)
+		assert.Equal(t, "value1", values[0].GetString())
+		assert.Equal(t, "value2", values[1].GetString())
+		assert.Equal(t, "value3", values[2].GetString())
+		assert.Equal(t, "123", values[3].GetString())
+
+		// Testincludingnon-existentfieldbatchread
+		hmgetResp2 := redis.Master().HMGet(hashKey, "field1", "non_exist", "field2")
+		assert.NoError(t, hmgetResp2.Error)
+		
+		values2 := hmgetResp2.GetSlice()
+		assert.Len(t, values2, 3)
+		assert.Equal(t, "value1", values2[0].GetString())
+		// values2[1] shouldis nil (non-existentfield)
+		assert.Equal(t, "value2", values2[2].GetString())
+	})
+
+	t.Run("HExists_Field_Existence_Check", func(t *testing.T) {
+		hashKey := "test_hash"
+		
+		// Settestdata
+		redis.Master().HSet(hashKey, "existing_field", "value")
+		
+		// Testexistingfield
+		existResp := redis.Master().HExists(hashKey, "existing_field")
+		assert.NoError(t, existResp.Error)
+		assert.Equal(t, int64(1), existResp.GetInt64()) // existingshouldreturn 1
+
+		// Testnon-existentfield
+		nonExistResp := redis.Master().HExists(hashKey, "non_existing_field")
+		assert.NoError(t, nonExistResp.Error)
+		assert.Equal(t, int64(0), nonExistResp.GetInt64()) // non-existentshouldreturn 0
+
+		// Testnon-existent hash key
+		nonExistHashResp := redis.Master().HExists("non_existing_hash", "field")
+		assert.NoError(t, nonExistHashResp.Error)
+		assert.Equal(t, int64(0), nonExistHashResp.GetInt64())
+	})
+
+	t.Run("HDel_Delete_Field", func(t *testing.T) {
+		hashKey := "test_hash"
+		
+		// Settestdata
+		redis.Master().HSet(hashKey, "field1", "value1")
+		redis.Master().HSet(hashKey, "field2", "value2")
+		redis.Master().HSet(hashKey, "field3", "value3")
+
+		// Deletesinglefield
+		delResp := redis.Master().HDel(hashKey, "field1")
+		assert.NoError(t, delResp.Error)
+		assert.Equal(t, int64(1), delResp.GetInt64()) // delete 1 field
+
+		// Verifyfieldalreadydelete
+		existResp := redis.Master().HExists(hashKey, "field1")
+		assert.NoError(t, existResp.Error)
+		assert.Equal(t, int64(0), existResp.GetInt64())
+
+		// batchdeletemultiplefield
+		delResp2 := redis.Master().HDel(hashKey, "field2", "field3", "non_exist")
+		assert.NoError(t, delResp2.Error)
+		assert.Equal(t, int64(2), delResp2.GetInt64()) // delete 2 existingfield
+
+		// attemptdeletenon-existentfield
+		delResp3 := redis.Master().HDel(hashKey, "non_exist")
+		assert.NoError(t, delResp3.Error)
+		assert.Equal(t, int64(0), delResp3.GetInt64()) // delete 0 field
+	})
+
+	t.Run("HGetAll_Get_All_Fields", func(t *testing.T) {
+		hashKey := "test_hash"
+		
+		// Cleanandsettestdata
+		redis.Master().Delete(hashKey)
+		redis.Master().HSet(hashKey, "field1", "value1")
+		redis.Master().HSet(hashKey, "field2", "value2")
+		redis.Master().HSet(hashKey, "field3", "value3")
+
+		// Getallfieldandvalue
+		getAllResp := redis.Master().HGetAll(hashKey)
+		assert.NoError(t, getAllResp.Error)
+		
+		allData := getAllResp.GetSlice()
+		// resultformat: [field1, value1, field2, value2, ...]
+		assert.Equal(t, 6, len(allData))
+		
+		// build map toverifyresult
+		resultMap := make(map[string]string)
+		for i := 0; i < len(allData); i += 2 {
+			field := allData[i].GetString()
+			value := allData[i+1].GetString()
+			resultMap[field] = value
+		}
+		
+		assert.Equal(t, "value1", resultMap["field1"])
+		assert.Equal(t, "value2", resultMap["field2"])
+		assert.Equal(t, "value3", resultMap["field3"])
+
+		// Testempty hash
+		emptyResp := redis.Master().HGetAll("non_existing_hash")
+		assert.NoError(t, emptyResp.Error)
+		emptyData := emptyResp.GetSlice()
+		assert.Equal(t, 0, len(emptyData))
+	})
+
+	t.Run("HKeys_Get_All_Field_Names", func(t *testing.T) {
+		hashKey := "test_hash"
+		
+		// Cleanandsettestdata
+		redis.Master().Delete(hashKey)
+		redis.Master().HSet(hashKey, "field1", "value1")
+		redis.Master().HSet(hashKey, "field2", "value2")
+		redis.Master().HSet(hashKey, "field3", "value3")
+
+		// Getallfieldnames
+		keysResp := redis.Master().HKeys(hashKey)
+		assert.NoError(t, keysResp.Error)
+		
+		keys := keysResp.GetSlice()
+		assert.Equal(t, 3, len(keys))
+		
+		// build set toverifyresult (Redis order not guaranteed)
+		keySet := make(map[string]bool)
+		for _, key := range keys {
+			keySet[key.GetString()] = true
+		}
+		
+		assert.True(t, keySet["field1"])
+		assert.True(t, keySet["field2"])
+		assert.True(t, keySet["field3"])
+
+		// Testempty hash
+		emptyResp := redis.Master().HKeys("non_existing_hash")
+		assert.NoError(t, emptyResp.Error)
+		emptyKeys := emptyResp.GetSlice()
+		assert.Equal(t, 0, len(emptyKeys))
+	})
+
+	t.Run("HVals_Get_All_Values", func(t *testing.T) {
+		hashKey := "test_hash"
+		
+		// Cleanandsettestdata
+		redis.Master().Delete(hashKey)
+		redis.Master().HSet(hashKey, "field1", "value1")
+		redis.Master().HSet(hashKey, "field2", "value2")
+		redis.Master().HSet(hashKey, "field3", "value3")
+
+		// Getallvalue
+		valsResp := redis.Master().HVals(hashKey)
+		assert.NoError(t, valsResp.Error)
+		
+		vals := valsResp.GetSlice()
+		assert.Equal(t, 3, len(vals))
+		
+		// build set toverifyresult (Redis order not guaranteed)
+		valSet := make(map[string]bool)
+		for _, val := range vals {
+			valSet[val.GetString()] = true
+		}
+		
+		assert.True(t, valSet["value1"])
+		assert.True(t, valSet["value2"])
+		assert.True(t, valSet["value3"])
+
+		// Testempty hash
+		emptyResp := redis.Master().HVals("non_existing_hash")
+		assert.NoError(t, emptyResp.Error)
+		emptyVals := emptyResp.GetSlice()
+		assert.Equal(t, 0, len(emptyVals))
+	})
+
+	t.Run("HIncrBy_Increment_Field_Value", func(t *testing.T) {
+		hashKey := "test_hash_incr"
+		field := "counter"
+		
+		// Cleantestdata
+		redis.Master().Delete(hashKey)
+
+		// fornon-existentfieldincrement (shouldfrom 0 start)
+		incrResp := redis.Master().HIncrBy(hashKey, field, 5)
+		assert.NoError(t, incrResp.Error)
+		assert.Equal(t, int64(5), incrResp.GetInt64())
+
+		// continueincrement
+		incrResp2 := redis.Master().HIncrBy(hashKey, field, 10)
+		assert.NoError(t, incrResp2.Error)
+		assert.Equal(t, int64(15), incrResp2.GetInt64())
+
+		// negative numberincrement (actuallyisdecrement)
+		incrResp3 := redis.Master().HIncrBy(hashKey, field, -3)
+		assert.NoError(t, incrResp3.Error)
+		assert.Equal(t, int64(12), incrResp3.GetInt64())
+
+		// Verifyfinalvalue
+		getResp := redis.Master().HGet(hashKey, field)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "12", getResp.GetString())
+
+		// Testfornonnumericvaluefieldincrement (shoulderror)
+		redis.Master().HSet(hashKey, "text_field", "not_a_number")
+		incrRespErr := redis.Master().HIncrBy(hashKey, "text_field", 1)
+		// Redis willreturnerror，butherewecheckitnotwill panic
+		assert.NotNil(t, incrRespErr)
+	})
+
+	t.Run("HScan_Iterate_Scan", func(t *testing.T) {
+		hashKey := "test_hash_scan"
+		
+		// Cleanandsettestdata
+		redis.Master().Delete(hashKey)
 		redis.Master().HSet(hashKey, "field1", "value1")
 		redis.Master().HSet(hashKey, "field2", "value2")
 		redis.Master().HSet(hashKey, "field3", "value3")
 		redis.Master().HSet(hashKey, "other1", "othervalue1")
+		redis.Master().HSet(hashKey, "other2", "othervalue2")
 		
-		// HScan with pattern
-		response := redis.Master().HScan(hashKey, 0, "field*", 100)
-		assert.NoError(t, response.Error)
+		// HScan no pattern matching - getall
+		scanResp := redis.Master().HScan(hashKey, 0, "", 100)
+		assert.NoError(t, scanResp.Error)
 		
-		// HScan without pattern
-		response2 := redis.Master().HScan(hashKey, 0, "", 100)
-		assert.NoError(t, response2.Error)
+		scanData := scanResp.GetSlice()
+		// resultformat: [cursor, [field1, value1, field2, value2, ...]]
+		assert.GreaterOrEqual(t, len(scanData), 2) // at least cursor anddatanumericpairs
+
+		// HScan havepattern matching - onlyget field* prefix
+		scanResp2 := redis.Master().HScan(hashKey, 0, "field*", 100)
+		assert.NoError(t, scanResp2.Error)
+		// shouldincluding field1, field2, field3 anditsvalue
 		
-		// Cleanup
+		// HScan havepattern matching - get other* prefix
+		scanResp3 := redis.Master().HScan(hashKey, 0, "other*", 100)
+		assert.NoError(t, scanResp3.Error)
+		// shouldincluding other1, other2 anditsvalue
+
+		// Testempty hash
+		emptyScanResp := redis.Master().HScan("non_existing_hash", 0, "", 100)
+		assert.NoError(t, emptyScanResp.Error)
+
+		// HScan with count parametersnumeric
+		scanResp4 := redis.Master().HScan(hashKey, 0, "", 2)
+		assert.NoError(t, scanResp4.Error)
+	})
+
+	t.Run("Hash_Commands_Comprehensive_Test", func(t *testing.T) {
+		hashKey := "test_comprehensive_hash"
+		
+		// Clean
 		redis.Master().Delete(hashKey)
+
+		// scenario 1: userinformationstorage
+		userInfo := map[interface{}]interface{}{
+			"name":     "John",
+			"age":      "30",
+			"email":    "zhangsan@example.com",
+			"score":    "100",
+			"status":   "active",
+		}
+		
+		// batchsetuserinformation
+		hmsetResp := redis.Master().HMSet(hashKey, userInfo)
+		assert.NoError(t, hmsetResp.Error)
+
+		// checkfieldnumericcount
+		lenResp := redis.Master().HLen(hashKey)
+		assert.NoError(t, lenResp.Error)
+		assert.Equal(t, int64(5), lenResp.GetInt64())
+
+		// increasescorenumeric
+		redis.Master().HIncrBy(hashKey, "score", 50)
+		scoreResp := redis.Master().HGet(hashKey, "score")
+		assert.NoError(t, scoreResp.Error)
+		assert.Equal(t, "150", scoreResp.GetString())
+
+		// updatestatus
+		redis.Master().HSet(hashKey, "status", "inactive")
+		
+		// batchgetkeyinformation
+		hmgetResp := redis.Master().HMGet(hashKey, "name", "age", "score", "status")
+		assert.NoError(t, hmgetResp.Error)
+		
+		values := hmgetResp.GetSlice()
+		assert.Equal(t, "John", values[0].GetString())
+		assert.Equal(t, "30", values[1].GetString())
+		assert.Equal(t, "150", values[2].GetString())
+		assert.Equal(t, "inactive", values[3].GetString())
+
+		// Deletesensitiveinformation
+		redis.Master().HDel(hashKey, "email")
+		
+		// confirmdeletesuccess
+		existResp := redis.Master().HExists(hashKey, "email")
+		assert.NoError(t, existResp.Error)
+		assert.Equal(t, int64(0), existResp.GetInt64())
+
+		// finalverifyallremainingfield
+		getAllResp := redis.Master().HGetAll(hashKey)
+		assert.NoError(t, getAllResp.Error)
+		
+		finalData := getAllResp.GetSlice()
+		// 4 field * 2 = 8 elements (field-value for)
+		assert.Equal(t, 8, len(finalData))
 	})
 }
 
@@ -1424,5 +1760,383 @@ func TestRedisEval(t *testing.T) {
 		script := "return invalid_syntax("
 		response := redis.Master().Eval(script, []interface{}{}, []interface{}{})
 		assert.Error(t, response.Error)
+	})
+}
+
+// TestRedisStringCommands String command tests - completecoverall 11  String command
+func TestRedisStringCommands(t *testing.T) {
+    // Save original secret path and restore it after test
+    originalPath := secret.PATH
+    defer func() {
+        secret.PATH = originalPath
+    }()
+
+    // Set secret path to the example directory
+    wd, _ := os.Getwd()
+    secret.PATH = filepath.Join(wd, "example")
+
+    redis := NewRedis("test")
+    assert.NotNil(t, redis)
+
+	// Clean test environment
+	defer func() {
+		redis.Master().Delete("test_string", "test_string_2", "test_counter", "test_append", "test_range")
+		redis.Master().Close()
+	}()
+
+	t.Run("Set_Get_Basic_String_Operations", func(t *testing.T) {
+		key := "test_string"
+		value := "hello_world"
+		
+		// Set - setstringvalue
+		setResp := redis.Master().Set(key, value)
+		assert.NoError(t, setResp.Error)
+
+		// Get - getstringvalue
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, value, getResp.GetString())
+
+		// Set overwriteexistingvalue
+		newValue := "updated_value"
+		setResp2 := redis.Master().Set(key, newValue)
+		assert.NoError(t, setResp2.Error)
+
+		// Verifyupdateresult
+		getResp2 := redis.Master().Get(key)
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, newValue, getResp2.GetString())
+
+		// Testgetnon-existent key
+		nonExistResp := redis.Master().Get("non_exist_key")
+		assert.True(t, nonExistResp.RecordNotFound())
+	})
+
+	t.Run("SetExpire_Set_With_Expiration", func(t *testing.T) {
+		key := "test_string"
+		value := "expire_test"
+		ttl := int64(2) // 2 secondsexpire
+		
+		// SetExpire - setwithexpiretimestring
+		setExpResp := redis.Master().SetExpire(key, value, ttl)
+		assert.NoError(t, setExpResp.Error)
+
+		// immediatecheckvalue
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, value, getResp.GetString())
+
+		// check TTL
+		ttlResp := redis.Master().TTL(key)
+		assert.NoError(t, ttlResp.Error)
+		ttlValue := ttlResp.GetInt64()
+		assert.True(t, ttlValue > 0 && ttlValue <= ttl)
+
+		// waitexpire (simplifiedtest，notactuallywait)
+		// inactuallyproductionenvironmentduringmayneedwaittoverifyexpire
+	})
+
+	t.Run("Incr_IncrBy_Increment_String", func(t *testing.T) {
+		counterKey := "test_counter"
+		
+		// Clean
+		redis.Master().Delete(counterKey)
+
+		// Incr - incrementnon-existent key (from 0 start)
+		incrResp := redis.Master().Incr(counterKey)
+		assert.NoError(t, incrResp.Error)
+		assert.Equal(t, int64(1), incrResp.GetInt64())
+
+		// continue Incr
+		incrResp2 := redis.Master().Incr(counterKey)
+		assert.NoError(t, incrResp2.Error)
+		assert.Equal(t, int64(2), incrResp2.GetInt64())
+
+		// IncrBy - byspecifiednumericcountincrement
+		incrByResp := redis.Master().IncrBy(counterKey, 5)
+		assert.NoError(t, incrByResp.Error)
+		assert.Equal(t, int64(7), incrByResp.GetInt64())
+
+		// IncrBy negative number (actuallyisdecrement)
+		incrByResp2 := redis.Master().IncrBy(counterKey, -3)
+		assert.NoError(t, incrByResp2.Error)
+		assert.Equal(t, int64(4), incrByResp2.GetInt64())
+
+		// Verifyfinalvalue
+		getResp := redis.Master().Get(counterKey)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "4", getResp.GetString())
+
+		// Testfornonnumericvaluestringincrement (shoulderror)
+		redis.Master().Set("text_key", "not_a_number")
+		incrRespErr := redis.Master().Incr("text_key")
+		// Redis willreturnerror
+		assert.NotNil(t, incrRespErr)
+	})
+
+	t.Run("Decr_DecrBy_Decrement_String", func(t *testing.T) {
+		counterKey := "test_counter"
+		
+		// Setinitialvalue
+		redis.Master().Set(counterKey, "10")
+
+		// Decr - decrement
+		decrResp := redis.Master().Decr(counterKey)
+		assert.NoError(t, decrResp.Error)
+		assert.Equal(t, int64(9), decrResp.GetInt64())
+
+		// DecrBy - byspecifiednumericcountdecrement
+		decrByResp := redis.Master().DecrBy(counterKey, 4)
+		assert.NoError(t, decrByResp.Error)
+		assert.Equal(t, int64(5), decrByResp.GetInt64())
+
+		// DecrBy negative number (actuallyisincrement)
+		decrByResp2 := redis.Master().DecrBy(counterKey, -2)
+		assert.NoError(t, decrByResp2.Error)
+		assert.Equal(t, int64(7), decrByResp2.GetInt64())
+
+		// Verifyfinalvalue
+		getResp := redis.Master().Get(counterKey)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "7", getResp.GetString())
+
+		// Decr tonegative number
+		redis.Master().Set(counterKey, "1")
+		decrResp3 := redis.Master().Decr(counterKey)
+		assert.NoError(t, decrResp3.Error)
+		assert.Equal(t, int64(0), decrResp3.GetInt64())
+
+		decrResp4 := redis.Master().Decr(counterKey)
+		assert.NoError(t, decrResp4.Error)
+		assert.Equal(t, int64(-1), decrResp4.GetInt64())
+	})
+
+	t.Run("Append_Append_To_String", func(t *testing.T) {
+		key := "test_append"
+		
+		// Clean
+		redis.Master().Delete(key)
+
+		// Append tonon-existent key (equalto SET)
+		appendResp := redis.Master().Append(key, "hello")
+		assert.NoError(t, appendResp.Error)
+		assert.Equal(t, int64(5), appendResp.GetInt64()) // "hello" length
+
+		// checkvalue
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "hello", getResp.GetString())
+
+		// Append toexistingstring
+		appendResp2 := redis.Master().Append(key, " world")
+		assert.NoError(t, appendResp2.Error)
+		assert.Equal(t, int64(11), appendResp2.GetInt64()) // "hello world" length
+
+		// Verifyresult
+		getResp2 := redis.Master().Get(key)
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, "hello world", getResp2.GetString())
+
+		// Append emptystring
+		appendResp3 := redis.Master().Append(key, "")
+		assert.NoError(t, appendResp3.Error)
+		assert.Equal(t, int64(11), appendResp3.GetInt64()) // lengthnotchanged
+
+		// Append numericcharacter
+		appendResp4 := redis.Master().Append(key, "123")
+		assert.NoError(t, appendResp4.Error)
+		assert.Equal(t, int64(14), appendResp4.GetInt64())
+
+		getResp3 := redis.Master().Get(key)
+		assert.NoError(t, getResp3.Error)
+		assert.Equal(t, "hello world123", getResp3.GetString())
+	})
+
+	t.Run("StrLen_Get_String_Length", func(t *testing.T) {
+		key := "test_string"
+		
+		// Testemptystring
+		redis.Master().Set(key, "")
+		lenResp := redis.Master().StrLen(key)
+		assert.NoError(t, lenResp.Error)
+		assert.Equal(t, int64(0), lenResp.GetInt64())
+
+		// Testcommonstring
+		redis.Master().Set(key, "hello")
+		lenResp2 := redis.Master().StrLen(key)
+		assert.NoError(t, lenResp2.Error)
+		assert.Equal(t, int64(5), lenResp2.GetInt64())
+
+		// Testduringtextstring (UTF-8 encoding)
+		redis.Master().Set(key, "hello")
+		lenResp3 := redis.Master().StrLen(key)
+		assert.NoError(t, lenResp3.Error)
+		// "hello" is 5 ASCII characters, so length is 5
+		assert.Equal(t, int64(5), lenResp3.GetInt64())
+
+		// Testnon-existent key
+		lenResp4 := redis.Master().StrLen("non_exist_key")
+		assert.NoError(t, lenResp4.Error)
+		assert.Equal(t, int64(0), lenResp4.GetInt64())
+
+		// Testnumericcharacterstring
+		redis.Master().Set(key, "12345")
+		lenResp5 := redis.Master().StrLen(key)
+		assert.NoError(t, lenResp5.Error)
+		assert.Equal(t, int64(5), lenResp5.GetInt64())
+	})
+
+	t.Run("GetRange_Get_String_Range", func(t *testing.T) {
+		key := "test_range"
+		value := "hello world"
+		
+		// Setteststring
+		redis.Master().Set(key, value)
+
+		// Getcompletestring (0 to -1)
+		rangeResp := redis.Master().GetRange(key, 0, -1)
+		assert.NoError(t, rangeResp.Error)
+		assert.Equal(t, value, rangeResp.GetString())
+
+		// Getbefore 5 charactercharacter
+		rangeResp2 := redis.Master().GetRange(key, 0, 4)
+		assert.NoError(t, rangeResp2.Error)
+		assert.Equal(t, "hello", rangeResp2.GetString())
+
+		// Getafter 5 charactercharacter
+		rangeResp3 := redis.Master().GetRange(key, 6, 10)
+		assert.NoError(t, rangeResp3.Error)
+		assert.Equal(t, "world", rangeResp3.GetString())
+
+		// useusenegative numberindex
+		rangeResp4 := redis.Master().GetRange(key, -5, -1)
+		assert.NoError(t, rangeResp4.Error)
+		assert.Equal(t, "world", rangeResp4.GetString())
+
+		// exceedrangeindex
+		rangeResp5 := redis.Master().GetRange(key, 0, 100)
+		assert.NoError(t, rangeResp5.Error)
+		assert.Equal(t, value, rangeResp5.GetString())
+
+		// start > end
+		rangeResp6 := redis.Master().GetRange(key, 5, 2)
+		assert.NoError(t, rangeResp6.Error)
+		assert.Equal(t, "", rangeResp6.GetString())
+
+		// non-existent key
+		rangeResp7 := redis.Master().GetRange("non_exist_key", 0, 10)
+		assert.NoError(t, rangeResp7.Error)
+		assert.Equal(t, "", rangeResp7.GetString())
+	})
+
+	t.Run("SetRange_Set_String_Range", func(t *testing.T) {
+		key := "test_range"
+		
+		// Clean
+		redis.Master().Delete(key)
+
+		// inempty key on SetRange (willuse null charactercharacterpadding)
+		setRangeResp := redis.Master().SetRange(key, 5, "world")
+		assert.NoError(t, setRangeResp.Error)
+		assert.Equal(t, int64(10), setRangeResp.GetInt64()) // newstringlength
+
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		result := getResp.GetString()
+		// before 5 charactercharactershouldis null charactercharacter，thenafteris "world"
+		assert.Equal(t, 10, len(result))
+		assert.Equal(t, "world", result[5:])
+
+		// inexistingstringon SetRange
+		redis.Master().Set(key, "hello world")
+		setRangeResp2 := redis.Master().SetRange(key, 6, "Redis")
+		assert.NoError(t, setRangeResp2.Error)
+		assert.Equal(t, int64(11), setRangeResp2.GetInt64()) // keeporiginallength
+
+		getResp2 := redis.Master().Get(key)
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, "hello Redis", getResp2.GetString())
+
+		// SetRange exceedoriginalstringlength
+		setRangeResp3 := redis.Master().SetRange(key, 15, "test")
+		assert.NoError(t, setRangeResp3.Error)
+		assert.Equal(t, int64(19), setRangeResp3.GetInt64())
+
+		getResp3 := redis.Master().Get(key)
+		assert.NoError(t, getResp3.Error)
+		result3 := getResp3.GetString()
+		assert.Equal(t, 19, len(result3))
+		assert.Equal(t, "test", result3[15:])
+
+		// SetRange offset 0
+		setRangeResp4 := redis.Master().SetRange(key, 0, "hi")
+		assert.NoError(t, setRangeResp4.Error)
+
+		getResp4 := redis.Master().Get(key)
+		assert.NoError(t, getResp4.Error)
+		result4 := getResp4.GetString()
+		assert.True(t, len(result4) >= 2)
+		assert.Equal(t, "hi", result4[:2])
+	})
+
+	t.Run("String_Commands_Comprehensive_Test", func(t *testing.T) {
+		// scenario：countnumericcounterandtextdocumentprocessingcomprehensiveappuse
+		counterKey := "page_views"
+		contentKey := "page_content"
+		
+		// Clean
+		redis.Master().Delete(counterKey, contentKey)
+
+		// 1. initialinitpagebrowsecountnumeric
+		redis.Master().Set(counterKey, "0")
+		
+		// 2. simulatemultiplepagebrowse
+		for i := 0; i < 5; i++ {
+			redis.Master().Incr(counterKey)
+		}
+		
+		// 3. batchincreasebrowsecount
+		redis.Master().IncrBy(counterKey, 10)
+		
+		// Verifycountnumericresult
+		countResp := redis.Master().Get(counterKey)
+		assert.NoError(t, countResp.Error)
+		assert.Equal(t, "15", countResp.GetString())
+
+		// 4. createpagecontent
+		redis.Master().Set(contentKey, "title：")
+		redis.Master().Append(contentKey, "Redis stringoperationguide")
+		redis.Master().Append(contentKey, "\ncontent：thisisone")
+		redis.Master().Append(contentKey, "complete Redis testexample")
+		
+		// 5. getcontentlength
+		lenResp := redis.Master().StrLen(contentKey)
+		assert.NoError(t, lenResp.Error)
+		assert.True(t, lenResp.GetInt64() > 30) // ensurehavereasonablecontentlength
+
+		// 6. extractcontentsegment
+		titleRange := redis.Master().GetRange(contentKey, 3, 15) // extracttitlepartscore
+		assert.NoError(t, titleRange.Error)
+		assert.Contains(t, titleRange.GetString(), "Redis")
+
+		// 7. setcontentexpiretime
+		redis.Master().SetExpire(contentKey+"_backup", "backup content", 3600)
+		
+		// 8. verifyexpiretimeset
+		ttlResp := redis.Master().TTL(contentKey + "_backup")
+		assert.NoError(t, ttlResp.Error)
+		assert.True(t, ttlResp.GetInt64() > 3500) // ensure TTL correctset
+
+		// 9. finalverifyalloperationresult
+		finalCountResp := redis.Master().Get(counterKey)
+		assert.NoError(t, finalCountResp.Error)
+		assert.Equal(t, "15", finalCountResp.GetString())
+
+		finalContentResp := redis.Master().Get(contentKey)
+		assert.NoError(t, finalContentResp.Error)
+		finalContent := finalContentResp.GetString()
+		assert.Contains(t, finalContent, "title：")
+		assert.Contains(t, finalContent, "Redis")
+		assert.Contains(t, finalContent, "testexample")
 	})
 }
