@@ -988,7 +988,7 @@ func (k *RedisResponseEntity) GetBytes() []byte {
 
 // GetSlice converts an array reply into a slice of RedisResponseEntity for typed access.
 // Returns an empty slice if the reply is not an array.
-func (k *RedisResponse) GetSlice() []RedisResponseEntity {
+func (k *RedisResponseEntity) GetSlice() []RedisResponseEntity {
 	var entities []RedisResponseEntity
 	switch v := k.data.(type) {
 	case []interface{}:
