@@ -119,15 +119,39 @@ jobs:
         docker compose up -d
         chmod +x docker/wait-for-services.sh
 
+    - name: Show Docker container status
+      run: |
+        echo "📊 Docker container status:"
+        docker compose ps
+        echo "🔍 Docker logs preview:"
+        docker compose logs --tail=10
+
     - name: Wait for services to be healthy
       run: |
         echo "⏳ Waiting for services to be healthy..."
-        timeout 300 ./docker/wait-for-services.sh
+        timeout 600 ./docker/wait-for-services.sh || {
+          echo "❌ Service health check failed. Showing detailed logs:"
+          docker compose logs
+          docker compose ps
+          exit 1
+        }
+
+    - name: Verify service connectivity
+      run: |
+        echo "🔍 Testing service ports from host..."
+        # Test Redis
+        nc -z 127.0.0.1 6379 && echo "✅ Redis port accessible" || echo "❌ Redis port not accessible"
+        # Test MySQL  
+        nc -z 127.0.0.1 3306 && echo "✅ MySQL port accessible" || echo "❌ MySQL port not accessible"
+        # Test Cassandra
+        nc -z 127.0.0.1 9042 && echo "✅ Cassandra port accessible" || echo "❌ Cassandra port not accessible"
         
     - name: Setup test configuration for ${{ matrix.test-group }}
       run: |
         echo "⚙️ Setting up test configuration for ${{ matrix.test-group }}..."
         cp docker/config/${{ matrix.test-group }}-test/secret.json example/${{ matrix.test-group }}-test/
+        echo "📋 Configuration file content:"
+        cat example/${{ matrix.test-group }}-test/secret.json
 
     - name: Run ${{ matrix.test-group }} tests
       run: |
@@ -194,15 +218,43 @@ jobs:
         docker compose up -d
         chmod +x docker/wait-for-services.sh
 
-    - name: Wait for all services to be healthy
+    - name: Show Docker container status
+      run: |
+        echo "📊 Docker container status:"
+        docker compose ps
+        echo "🔍 Docker logs preview:"
+        docker compose logs --tail=10
+
+    - name: Wait for all services to be healthy  
       run: |
         echo "⏳ Waiting for all services to be healthy..."
-        timeout 600 ./docker/wait-for-services.sh
+        timeout 800 ./docker/wait-for-services.sh || {
+          echo "❌ Service health check failed. Showing detailed logs:"
+          docker compose logs
+          docker compose ps
+          exit 1
+        }
+
+    - name: Verify all service connectivity
+      run: |
+        echo "🔍 Testing all service ports from host..."
+        # Test Redis
+        nc -z 127.0.0.1 6379 && echo "✅ Redis port accessible" || echo "❌ Redis port not accessible"
+        # Test MySQL  
+        nc -z 127.0.0.1 3306 && echo "✅ MySQL port accessible" || echo "❌ MySQL port not accessible"
+        # Test Cassandra
+        nc -z 127.0.0.1 9042 && echo "✅ Cassandra port accessible" || echo "❌ Cassandra port not accessible"
 
     - name: Setup all test configurations
       run: |
         echo "⚙️ Setting up test configurations for Docker services..."
         cp -r docker/config/* example/
+        echo "📋 Redis configuration:"
+        cat example/redis-test/secret.json
+        echo "📋 MySQL configuration:" 
+        cat example/database-test/secret.json
+        echo "📋 Cassandra configuration:"
+        cat example/cassandra-test/secret.json
 
     - name: Run full test suite
       run: |
