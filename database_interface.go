@@ -13,14 +13,14 @@ type DatabaseOperator interface {
 	// Core database access
 	DB() *gorm.DB
 	Adapter() string
-	
+
 	// Configuration access
 	GetConnParams() ConnParams
 	GetMysqlParams() MysqlParams
 	GetGORMParams() gorm.Config
 	GetLogger() logger.Interface
 	Meta() secret.DatabaseMeta
-	
+
 	// Configuration setters
 	SetConnParams(params ConnParams)
 	SetMysqlParams(params MysqlParams)

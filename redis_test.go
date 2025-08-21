@@ -2247,7 +2247,7 @@ func TestMockRedisBasicFunctionality(t *testing.T) {
 	t.Run("NewRedisWithMock_Custom_Mocks", func(t *testing.T) {
 		masterMock := NewMockRedisOp()
 		slaveMock := NewMockRedisOp()
-		
+
 		mockRedis := NewRedisWithMock(masterMock, slaveMock)
 		assert.NotNil(t, mockRedis)
 		assert.Equal(t, "custom-mock", mockRedis.name)
@@ -2279,7 +2279,7 @@ func TestMockRedisBasicFunctionality(t *testing.T) {
 func TestMockRedisResponseHandling(t *testing.T) {
 	t.Run("SetResponse_Single_Static_Response", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure static response
 		mock.SetResponse("GET", "key1", "static_value", nil)
 		mock.SetResponse("SET", "key2", int64(1), nil)
@@ -2307,7 +2307,7 @@ func TestMockRedisResponseHandling(t *testing.T) {
 
 	t.Run("SetSequentialResponses_Multiple_Calls", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure sequential responses
 		sequential := []MockResponse{
 			{Data: "first", Error: nil},
@@ -2342,7 +2342,7 @@ func TestMockRedisResponseHandling(t *testing.T) {
 
 	t.Run("SetConditionalResponse_Based_On_Args", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure conditional responses
 		condition1 := func(cmd string, args []interface{}) bool {
 			return len(args) > 0 && args[0] == "special_key"
@@ -2376,29 +2376,29 @@ func TestMockRedisResponseHandling(t *testing.T) {
 func TestMockRedisCallHistory(t *testing.T) {
 	t.Run("GetCallHistory_Records_All_Calls", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Make various calls
 		mock.Get("key1")
 		mock.Set("key2", "value2")
 		mock.HSet("hash1", "field1", "value1")
 		mock.Delete("key3")
-		
+
 		// Check call history
 		history := mock.GetCallHistory()
 		assert.Len(t, history, 4)
-		
+
 		// Verify first call
 		assert.Equal(t, "GET", history[0].Command)
 		assert.Equal(t, []interface{}{"key1"}, history[0].Args)
-		
+
 		// Verify second call
 		assert.Equal(t, "SET", history[1].Command)
 		assert.Equal(t, []interface{}{"key2", "value2"}, history[1].Args)
-		
+
 		// Verify third call
 		assert.Equal(t, "HSET", history[2].Command)
 		assert.Equal(t, []interface{}{"hash1", "field1", "value1"}, history[2].Args)
-		
+
 		// Verify fourth call
 		assert.Equal(t, "DEL", history[3].Command)
 		assert.Equal(t, []interface{}{"key3"}, history[3].Args)
@@ -2406,14 +2406,14 @@ func TestMockRedisCallHistory(t *testing.T) {
 
 	t.Run("GetCallsByCommand_Filter_By_Command", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Make multiple calls
 		mock.Get("key1")
 		mock.Set("key2", "value2")
 		mock.Get("key3")
 		mock.HSet("hash1", "field1", "value1")
 		mock.Get("key4")
-		
+
 		// Get only GET commands
 		getCalls := mock.GetCallsByCommand("GET")
 		assert.Len(t, getCalls, 3)
@@ -2423,17 +2423,17 @@ func TestMockRedisCallHistory(t *testing.T) {
 		assert.Equal(t, []interface{}{"key3"}, getCalls[1].Args)
 		assert.Equal(t, "GET", getCalls[2].Command)
 		assert.Equal(t, []interface{}{"key4"}, getCalls[2].Args)
-		
+
 		// Get only SET commands
 		setCalls := mock.GetCallsByCommand("SET")
 		assert.Len(t, setCalls, 1)
 		assert.Equal(t, "SET", setCalls[0].Command)
-		
+
 		// Get only HSET commands
 		hsetCalls := mock.GetCallsByCommand("HSET")
 		assert.Len(t, hsetCalls, 1)
 		assert.Equal(t, "HSET", hsetCalls[0].Command)
-		
+
 		// Get non-existent command
 		noneCalls := mock.GetCallsByCommand("NONEXISTENT")
 		assert.Len(t, noneCalls, 0)
@@ -2441,22 +2441,22 @@ func TestMockRedisCallHistory(t *testing.T) {
 
 	t.Run("ClearCallHistory_Resets_History", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Make some calls
 		mock.Get("key1")
 		mock.Set("key2", "value2")
-		
+
 		// Verify history exists
 		history := mock.GetCallHistory()
 		assert.Len(t, history, 2)
-		
+
 		// Clear history
 		mock.ClearCallHistory()
-		
+
 		// Verify history is empty
 		clearedHistory := mock.GetCallHistory()
 		assert.Len(t, clearedHistory, 0)
-		
+
 		// Make new calls after clearing
 		mock.Delete("key3")
 		newHistory := mock.GetCallHistory()
@@ -2469,7 +2469,7 @@ func TestMockRedisHashCommands(t *testing.T) {
 	// Test all 12 Hash Commands from memory with mock functionality
 	t.Run("Hash_Commands_With_Mock_Responses", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure responses for each Hash command
 		mock.SetResponse("HSET", "hash1", int64(1), nil)
 		mock.SetResponse("HGET", "hash1", "field_value", nil)
@@ -2558,7 +2558,7 @@ func TestMockRedisHashCommands(t *testing.T) {
 		// Verify call history recorded all commands
 		history := mock.GetCallHistory()
 		assert.Len(t, history, 12)
-		
+
 		expectedCommands := []string{"HSET", "HGET", "HMSET", "HMGET", "HEXISTS", "HDEL", "HGETALL", "HLEN", "HKEYS", "HINCRBY", "HVALS", "HSCAN"}
 		for i, expectedCmd := range expectedCommands {
 			assert.Equal(t, expectedCmd, history[i].Command)
@@ -2570,7 +2570,7 @@ func TestMockRedisStringCommands(t *testing.T) {
 	// Test all 11 String Commands from memory
 	t.Run("String_Commands_With_Mock_Responses", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure responses for each String command
 		mock.SetResponse("GET", "key1", "mock_value", nil)
 		mock.SetResponse("SET", "key1", "OK", nil)
@@ -2632,7 +2632,7 @@ func TestMockRedisStringCommands(t *testing.T) {
 		// Verify call history
 		history := mock.GetCallHistory()
 		assert.Len(t, history, 11)
-		
+
 		expectedCommands := []string{"GET", "SET", "SETEX", "INCR", "INCRBY", "DECR", "DECRBY", "APPEND", "STRLEN", "GETRANGE", "SETRANGE"}
 		for i, expectedCmd := range expectedCommands {
 			assert.Equal(t, expectedCmd, history[i].Command)
@@ -2644,11 +2644,11 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 	t.Run("Existing_API_Unchanged_With_Mock", func(t *testing.T) {
 		// Test that existing code patterns still work with mock
 		mockRedis := NewMockRedis()
-		
+
 		// Configure some mock responses
 		masterMock := mockRedis.Master().(*MockRedisOp)
 		slaveMock := mockRedis.Slave().(*MockRedisOp)
-		
+
 		masterMock.SetResponse("SET", "test_key", "OK", nil)
 		masterMock.SetResponse("GET", "test_key", "test_value", nil)
 		slaveMock.SetResponse("GET", "test_key", "test_value", nil)
@@ -2656,19 +2656,19 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 		// Test Master/Slave pattern still works
 		master := mockRedis.Master()
 		slave := mockRedis.Slave()
-		
+
 		assert.NotNil(t, master)
 		assert.NotNil(t, slave)
-		
+
 		// Test method chaining still works
 		setResp := master.Set("test_key", "value")
 		assert.NoError(t, setResp.Error)
 		assert.Equal(t, "OK", setResp.GetString())
-		
+
 		getResp := slave.Get("test_key")
 		assert.NoError(t, getResp.Error)
 		assert.Equal(t, "test_value", getResp.GetString())
-		
+
 		// Test interface methods work
 		assert.NotNil(t, master.Pool())
 		assert.NotNil(t, master.Meta())
@@ -2679,7 +2679,7 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 	t.Run("Real_Redis_Interface_Still_Works", func(t *testing.T) {
 		// This test verifies that real Redis instances still work
 		// when using the interface-based design
-		
+
 		// Save original secret path and restore it after test
 		originalPath := secret.PATH
 		defer func() {
@@ -2692,20 +2692,20 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 
 		realRedis := NewRedis("test")
 		assert.NotNil(t, realRedis)
-		
+
 		// Test interface methods work with real Redis
 		master := realRedis.Master()
 		slave := realRedis.Slave()
-		
+
 		assert.NotNil(t, master)
 		assert.NotNil(t, slave)
-		
+
 		// Test that the interface methods exist and don't panic
 		assert.NotNil(t, master.Pool())
 		assert.NotNil(t, master.Meta())
 		assert.GreaterOrEqual(t, master.ActiveCount(), 0)
 		assert.GreaterOrEqual(t, master.IdleCount(), 0)
-		
+
 		// The actual Redis operations would require a real Redis server
 		// So we just verify the interface methods are accessible
 	})
@@ -2714,21 +2714,21 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 func TestMockRedisConnectionAndPool(t *testing.T) {
 	t.Run("Mock_Connection_And_Pool_Methods", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Test pool info methods
 		assert.GreaterOrEqual(t, mock.ActiveCount(), 0)
 		assert.GreaterOrEqual(t, mock.IdleCount(), 0)
-		
+
 		// Test meta info
 		meta := mock.Meta()
 		assert.Equal(t, "mock", meta.Host)
 		assert.Equal(t, uint(6379), meta.Port)
-		
+
 		// Test connection methods don't panic
 		assert.NotNil(t, mock.Pool())
 		assert.NotNil(t, mock.Conn())
 		assert.NoError(t, mock.Close())
-		
+
 		// Test Exec method
 		var executed bool
 		err := mock.Exec(func(conn redis.Conn) {
@@ -2742,7 +2742,7 @@ func TestMockRedisConnectionAndPool(t *testing.T) {
 func TestMockRedisPipeline(t *testing.T) {
 	t.Run("Pipeline_With_Mock_Responses", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure responses for pipeline commands
 		mock.SetResponse("PIPELINE", "", []interface{}{
 			&RedisResponse{RedisResponseEntity{data: "OK"}, nil},
@@ -2760,13 +2760,13 @@ func TestMockRedisPipeline(t *testing.T) {
 		// Execute pipeline
 		responses := mock.Pipeline(cmds...)
 		assert.Len(t, responses, 3)
-		
+
 		assert.NoError(t, responses[0].Error)
 		assert.Equal(t, "OK", responses[0].GetString())
-		
+
 		assert.NoError(t, responses[1].Error)
 		assert.Equal(t, int64(1), responses[1].GetInt64())
-		
+
 		assert.NoError(t, responses[2].Error)
 		assert.Equal(t, "value", responses[2].GetString())
 
@@ -2780,7 +2780,7 @@ func TestMockRedisPipeline(t *testing.T) {
 func TestMockRedisListCommands(t *testing.T) {
 	t.Run("List_Commands_With_Mock_Responses", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure responses for all list commands
 		mock.SetResponse("LPUSH", "list1", int64(1), nil)
 		mock.SetResponse("LPUSHX", "list1", int64(1), nil)
@@ -2872,7 +2872,7 @@ func TestMockRedisListCommands(t *testing.T) {
 		// Verify call history - should have 17 commands (corrected count)
 		history := mock.GetCallHistory()
 		assert.Equal(t, 17, len(history)) // All 17 list command calls
-		
+
 		// Verify specific commands were called
 		lpushCalls := mock.GetCallsByCommand("LPUSH")
 		assert.Equal(t, 1, len(lpushCalls))
@@ -2883,7 +2883,7 @@ func TestMockRedisListCommands(t *testing.T) {
 func TestMockRedisSetCommands(t *testing.T) {
 	t.Run("Set_Commands_With_Mock_Responses", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure responses for all set commands
 		mock.SetResponse("SADD", "set1", int64(1), nil)
 		mock.SetResponse("SCARD", "set1", int64(3), nil)
@@ -2975,7 +2975,7 @@ func TestMockRedisSetCommands(t *testing.T) {
 		// Verify call history - should have 17 commands
 		history := mock.GetCallHistory()
 		assert.Equal(t, 17, len(history))
-		
+
 		// Verify specific commands were called
 		saddCalls := mock.GetCallsByCommand("SADD")
 		assert.Equal(t, 1, len(saddCalls))
@@ -2986,7 +2986,7 @@ func TestMockRedisSetCommands(t *testing.T) {
 func TestMockRedisSortedSetCommands(t *testing.T) {
 	t.Run("SortedSet_Commands_With_Mock_Responses", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure responses for all sorted set commands (30 commands)
 		mock.SetResponse("ZADD", "zset1", int64(1), nil)
 		mock.SetResponse("ZCARD", "zset1", int64(5), nil)
@@ -3153,7 +3153,7 @@ func TestMockRedisSortedSetCommands(t *testing.T) {
 		// Verify call history - should have 32 commands (30 original + 2 union commands)
 		history := mock.GetCallHistory()
 		assert.Equal(t, 32, len(history))
-		
+
 		// Verify specific commands were called
 		zaddCalls := mock.GetCallsByCommand("ZADD")
 		assert.Equal(t, 1, len(zaddCalls))
@@ -3164,7 +3164,7 @@ func TestMockRedisSortedSetCommands(t *testing.T) {
 func TestMockRedisKeyTTLCommands(t *testing.T) {
 	t.Run("KeyTTL_Commands_With_Mock_Responses", func(t *testing.T) {
 		mock := NewMockRedisOp()
-		
+
 		// Configure responses for all key/TTL commands - use actual Redis command names
 		mock.SetResponse("EXPIRE", "*", int64(1), nil)
 		mock.SetResponse("DEL", "*", int64(1), nil)
@@ -3266,7 +3266,7 @@ func TestMockRedisKeyTTLCommands(t *testing.T) {
 		// Verify call history - should have 19 commands
 		history := mock.GetCallHistory()
 		assert.Equal(t, 19, len(history))
-		
+
 		// Verify specific commands were called
 		expireCalls := mock.GetCallsByCommand("EXPIRE")
 		assert.Equal(t, 1, len(expireCalls))
@@ -3279,7 +3279,7 @@ func BenchmarkRedisOperations(b *testing.B) {
 	// Setup real Redis for benchmarking
 	wd, _ := os.Getwd()
 	secret.PATH = filepath.Join(wd, "example")
-	
+
 	realRedis := NewRedis("test")
 	if realRedis == nil {
 		b.Skip("Skipping benchmark - Redis not available")
@@ -3289,7 +3289,7 @@ func BenchmarkRedisOperations(b *testing.B) {
 	// Setup Mock Redis
 	mockRedis := NewMockRedis()
 	mockOp := mockRedis.Master().(*MockRedisOp)
-	
+
 	// Configure common mock responses
 	mockOp.SetResponse("SET", "*", "OK", nil)
 	mockOp.SetResponse("GET", "*", "test_value", nil)

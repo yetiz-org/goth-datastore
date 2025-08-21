@@ -9,7 +9,7 @@ services:
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       timeout: 3s
       interval: 5s
       retries: 5
@@ -31,7 +31,7 @@ services:
       - mysql-data:/var/lib/mysql
       - ./docker/init/mysql:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "test", "-ptest"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "test", "-ptest" ]
       timeout: 10s
       interval: 10s
       retries: 10
@@ -54,7 +54,7 @@ services:
       - cassandra-data:/var/lib/cassandra
       - ./docker/init/cassandra:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      test: [ "CMD", "cqlsh", "-e", "describe keyspaces" ]
       timeout: 30s
       interval: 30s
       retries: 10

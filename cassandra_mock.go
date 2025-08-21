@@ -24,14 +24,14 @@ type MockCassandraOp struct {
 	callHistory []MockCassandraCall
 
 	// Response configuration
-	sessionResponse     *gocql.Session
-	sessionError        error
-	newSessionResponse  *gocql.Session
-	newSessionError     error
-	execError           error
-	simulateFailure     bool
-	returnNilSession    bool
-	sessionClosed       bool
+	sessionResponse    *gocql.Session
+	sessionError       error
+	newSessionResponse *gocql.Session
+	newSessionError    error
+	execError          error
+	simulateFailure    bool
+	returnNilSession   bool
+	sessionClosed      bool
 }
 
 // MockCassandraCall represents a recorded Cassandra operation call.

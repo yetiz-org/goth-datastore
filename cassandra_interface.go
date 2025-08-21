@@ -14,12 +14,12 @@ type CassandraOperator interface {
 	NewSession() (*gocql.Session, error)
 	Close()
 	Exec(f func(session *gocql.Session)) error
-	
+
 	// Configuration access
 	Keyspace() string
 	Config() *gocql.ClusterConfig
 	ColumnsMetadata() map[string]CassandraColumnMetadata
-	
+
 	// Configuration setters for testing
 	SetMaxRetryAttempt(maxRetry int)
 }

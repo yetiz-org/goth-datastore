@@ -40,13 +40,13 @@ type MockConditionRule struct {
 // record call history, and return configured responses.
 type MockRedisOp struct {
 	mutex           sync.RWMutex
-	responses       map[string]MockResponse     // Static responses by command:key pattern
-	sequences       map[string][]MockResponse   // Sequential responses
-	conditions      []MockConditionRule         // Conditional responses
-	callHistory     []MockCallRecord            // All call records
-	sequenceIndexes map[string]int              // Current index for sequence responses
-	defaultError    error                       // Default error for unmatched calls
-	
+	responses       map[string]MockResponse   // Static responses by command:key pattern
+	sequences       map[string][]MockResponse // Sequential responses
+	conditions      []MockConditionRule       // Conditional responses
+	callHistory     []MockCallRecord          // All call records
+	sequenceIndexes map[string]int            // Current index for sequence responses
+	defaultError    error                     // Default error for unmatched calls
+
 	// Simulated connection pool info
 	activeCount int
 	idleCount   int
@@ -121,7 +121,7 @@ func (m *MockRedisOp) GetCallHistory() []MockCallRecord {
 func (m *MockRedisOp) GetCallsByCommand(command string) []MockCallRecord {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	var filteredCalls []MockCallRecord
 	for _, call := range m.callHistory {
 		if call.Command == command {
@@ -135,7 +135,7 @@ func (m *MockRedisOp) GetCallsByCommand(command string) []MockCallRecord {
 func (m *MockRedisOp) ClearCallHistory() {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
-	
+
 	m.callHistory = m.callHistory[:0] // Clear slice but keep capacity
 }
 
@@ -200,10 +200,10 @@ func (m *MockRedisOp) SetMeta(meta secret.RedisMeta) {
 // mockDo handles the core mock logic for Redis commands.
 func (m *MockRedisOp) mockDo(cmd string, args ...interface{}) *RedisResponse {
 	timestamp := time.Now()
-	
+
 	// Try to find a matching response
 	response := m.findResponse(cmd, args)
-	
+
 	// Record the call
 	record := MockCallRecord{
 		Timestamp: timestamp,
@@ -212,21 +212,21 @@ func (m *MockRedisOp) mockDo(cmd string, args ...interface{}) *RedisResponse {
 		Response:  response.Data,
 		Error:     response.Error,
 	}
-	
+
 	m.mutex.Lock()
 	m.callHistory = append(m.callHistory, record)
 	m.mutex.Unlock()
-	
+
 	// Simulate delay if configured
 	if response.Delay > 0 {
 		time.Sleep(response.Delay)
 	}
-	
+
 	// Return mock response
 	if response.Error != nil {
 		return &RedisResponse{Error: response.Error}
 	}
-	
+
 	return &RedisResponse{
 		RedisResponseEntity: RedisResponseEntity{data: response.Data},
 		Error:               nil,
@@ -237,14 +237,14 @@ func (m *MockRedisOp) mockDo(cmd string, args ...interface{}) *RedisResponse {
 func (m *MockRedisOp) findResponse(cmd string, args []interface{}) MockResponse {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
-	
+
 	// 1. Try conditional responses first
 	for _, rule := range m.conditions {
 		if rule.Command == cmd && rule.Condition(cmd, args) {
 			return rule.Response
 		}
 	}
-	
+
 	// 2. Try sequence responses
 	if len(args) > 0 {
 		key := fmt.Sprintf("%s:%v", cmd, args[0])
@@ -258,7 +258,7 @@ func (m *MockRedisOp) findResponse(cmd string, args []interface{}) MockResponse 
 			// Stay at last response once exhausted
 			return response
 		}
-		
+
 		// Try wildcard sequence
 		wildcardKey := fmt.Sprintf("%s:*", cmd)
 		if sequence, exists := m.sequences[wildcardKey]; exists && len(sequence) > 0 {
@@ -268,32 +268,32 @@ func (m *MockRedisOp) findResponse(cmd string, args []interface{}) MockResponse 
 			return response
 		}
 	}
-	
+
 	// 3. Try static responses
 	if len(args) > 0 {
 		key := fmt.Sprintf("%s:%v", cmd, args[0])
 		if response, exists := m.responses[key]; exists {
 			return response
 		}
-		
+
 		// Try wildcard static response
 		wildcardKey := fmt.Sprintf("%s:*", cmd)
 		if response, exists := m.responses[wildcardKey]; exists {
 			return response
 		}
 	}
-	
+
 	// 4. Command without key (like PING)
 	noKeyResponse := fmt.Sprintf("%s:", cmd)
 	if response, exists := m.responses[noKeyResponse]; exists {
 		return response
 	}
-	
+
 	// 5. Return default error or not found
 	if m.defaultError != nil {
 		return MockResponse{Error: m.defaultError}
 	}
-	
+
 	// Default: return nil for unconfigured responses (allows test flexibility)
 	return MockResponse{Data: nil, Error: nil}
 }
@@ -327,14 +327,14 @@ func (m *MockRedisOp) Conn() redis.Conn {
 // MockRedisConn implements redis.Conn interface for testing
 type MockRedisConn struct{}
 
-func (c *MockRedisConn) Close() error                                          { return nil }
-func (c *MockRedisConn) Err() error                                            { return nil }
+func (c *MockRedisConn) Close() error { return nil }
+func (c *MockRedisConn) Err() error   { return nil }
 func (c *MockRedisConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
 	return "OK", nil
 }
-func (c *MockRedisConn) Send(commandName string, args ...interface{}) error    { return nil }
-func (c *MockRedisConn) Flush() error                                          { return nil }
-func (c *MockRedisConn) Receive() (reply interface{}, err error)               { return "OK", nil }
+func (c *MockRedisConn) Send(commandName string, args ...interface{}) error { return nil }
+func (c *MockRedisConn) Flush() error                                       { return nil }
+func (c *MockRedisConn) Receive() (reply interface{}, err error)            { return "OK", nil }
 
 func (m *MockRedisOp) ActiveCount() int {
 	m.mutex.RLock()
@@ -362,12 +362,12 @@ func (m *MockRedisOp) Exec(f func(conn redis.Conn)) error {
 // Pipeline operations
 func (m *MockRedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
 	timestamp := time.Now()
-	
+
 	// Try to find a configured PIPELINE response first
 	pipelineResponse := m.findResponse("PIPELINE", []interface{}{})
-	
+
 	var responses []*RedisResponse
-	
+
 	if pipelineResponse.Data != nil {
 		// Use the configured pipeline response if available
 		if responseArray, ok := pipelineResponse.Data.([]interface{}); ok {
@@ -397,7 +397,7 @@ func (m *MockRedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
 		responses = make([]*RedisResponse, len(cmds))
 		for i, cmd := range cmds {
 			response := m.findResponse(cmd.Cmd, cmd.Args)
-			
+
 			if response.Error != nil {
 				responses[i] = &RedisResponse{Error: response.Error}
 			} else {
@@ -408,7 +408,7 @@ func (m *MockRedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
 			}
 		}
 	}
-	
+
 	// Record a single PIPELINE call in history
 	record := MockCallRecord{
 		Timestamp: timestamp,
@@ -417,11 +417,11 @@ func (m *MockRedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
 		Response:  responses,
 		Error:     pipelineResponse.Error,
 	}
-	
+
 	m.mutex.Lock()
 	m.callHistory = append(m.callHistory, record)
 	m.mutex.Unlock()
-	
+
 	return responses
 }
 
@@ -982,7 +982,7 @@ func (m *MockRedisOp) Eval(script string, keys []interface{}, args []interface{}
 func NewMockRedis() *Redis {
 	mockMaster := NewMockRedisOp()
 	mockSlave := NewMockRedisOp()
-	
+
 	return &Redis{
 		name:   "mock",
 		master: mockMaster,

@@ -488,81 +488,81 @@ func TestLoadDatabaseExampleSecret(t *testing.T) {
 func TestMockDatabaseOp(t *testing.T) {
 	t.Run("Basic mock functionality", func(t *testing.T) {
 		mock := NewMockDatabaseOp()
-		
+
 		// Test initial state
 		assert.Equal(t, "mysql", mock.Adapter())
 		assert.Equal(t, "mysql", mock.Meta().Adapter)
 		assert.NotNil(t, mock.GetConnParams())
 		assert.Equal(t, "utf8mb4", mock.GetConnParams().Charset)
-		
+
 		// Test DB call tracking
 		db := mock.DB()
 		assert.Nil(t, db) // Should be nil without configuration
 		assert.Equal(t, 1, mock.GetDBCallCount())
-		
+
 		// Test call history
 		history := mock.GetCallHistory()
 		assert.Len(t, history, 1)
 		assert.Equal(t, "DB", history[0].Method)
 	})
-	
+
 	t.Run("Configuration methods", func(t *testing.T) {
 		mock := NewMockDatabaseOp()
-		
+
 		// Test setting adapter
 		mock.SetAdapterResponse("postgres")
 		assert.Equal(t, "postgres", mock.Adapter())
-		
+
 		// Test setting metadata
 		newMeta := secret.DatabaseMeta{Adapter: "sqlite"}
 		mock.SetMeta(newMeta)
 		assert.Equal(t, "sqlite", mock.Meta().Adapter)
-		
+
 		// Test setting connection params
 		newParams := ConnParams{Charset: "latin1"}
 		mock.SetConnParams(newParams)
 		assert.Equal(t, "latin1", mock.GetConnParams().Charset)
 	})
-	
+
 	t.Run("Response simulation", func(t *testing.T) {
 		mock := NewMockDatabaseOp()
-		
+
 		// Test nil DB response
 		mock.SetReturnNilDB(true)
 		assert.Nil(t, mock.DB())
-		
+
 		// Test DB failure simulation
 		mock.SetReturnNilDB(false)
 		mock.SimulateDBFailure(true)
 		assert.Nil(t, mock.DB())
-		
+
 		// Test error response
 		expectedErr := errors.New("connection failed")
 		mock.SetDBResponse(nil, expectedErr)
 		mock.SimulateDBFailure(false)
 		db := mock.DB()
 		assert.Nil(t, db)
-		
+
 		history := mock.GetCallsByMethod("DB")
 		assert.True(t, len(history) > 0)
 	})
-	
+
 	t.Run("Call history tracking", func(t *testing.T) {
 		mock := NewMockDatabaseOp()
-		
+
 		// Make multiple calls
 		mock.DB()
 		mock.Adapter()
 		mock.Meta()
 		mock.GetConnParams()
-		
+
 		// Verify call history
 		history := mock.GetCallHistory()
 		assert.Len(t, history, 1) // Only DB() is tracked in call history
-		
+
 		dbCalls := mock.GetCallsByMethod("DB")
 		assert.Len(t, dbCalls, 1)
-		
+
 		// Test clearing history
 		mock.ClearCallHistory()
 		history = mock.GetCallHistory()
@@ -575,28 +575,28 @@ func TestMockDatabaseOp(t *testing.T) {
 func TestNewMockDatabase(t *testing.T) {
 	t.Run("Creates valid mock Database instance", func(t *testing.T) {
 		db := NewMockDatabase()
-		
+
 		assert.NotNil(t, db)
 		assert.NotNil(t, db.Writer())
 		assert.NotNil(t, db.Reader())
-		
+
 		// Verify both writer and reader are MockDatabaseOp instances
 		writer := db.Writer()
 		reader := db.Reader()
-		
+
 		assert.Equal(t, "mysql", writer.Adapter())
 		assert.Equal(t, "mysql", reader.Adapter())
 	})
-	
+
 	t.Run("NewMockDatabaseWithOps creates custom instance", func(t *testing.T) {
 		writerMock := NewMockDatabaseOp()
 		readerMock := NewMockDatabaseOp()
-		
+
 		writerMock.SetAdapterResponse("postgres")
 		readerMock.SetAdapterResponse("mysql")
-		
+
 		db := NewMockDatabaseWithOps(writerMock, readerMock)
-		
+
 		assert.NotNil(t, db)
 		assert.Equal(t, "postgres", db.Writer().Adapter())
 		assert.Equal(t, "mysql", db.Reader().Adapter())
@@ -607,17 +607,17 @@ func TestNewMockDatabase(t *testing.T) {
 func TestMockDatabaseBuilder(t *testing.T) {
 	t.Run("Builder pattern configuration", func(t *testing.T) {
 		builder := NewMockDatabaseBuilder()
-		
+
 		writerMeta := secret.DatabaseMeta{Adapter: "postgres"}
 		readerMeta := secret.DatabaseMeta{Adapter: "mysql"}
-		
+
 		db := builder.
 			WithWriterAdapter("postgres").
 			WithReaderAdapter("mysql").
 			WithWriterMeta(writerMeta).
 			WithReaderMeta(readerMeta).
 			Build()
-		
+
 		assert.NotNil(t, db)
 		assert.Equal(t, "postgres", db.Writer().Adapter())
 		assert.Equal(t, "mysql", db.Reader().Adapter())
