@@ -1,18 +1,18 @@
 module github.com/yetiz-org/goth-datastore
 
-go 1.23
+go 1.23.0
 
-toolchain go1.24.0
+toolchain go1.24.4
 
 require (
 	github.com/gocql/gocql v1.6.0
 	github.com/gomodule/redigo v1.9.2
-	github.com/stretchr/testify v1.8.4
-	github.com/yetiz-org/goth-kklogger v0.0.0-20250611122328-03d2bbd5bc69
+	github.com/stretchr/testify v1.10.0
+	github.com/yetiz-org/goth-kklogger v1.1.1
 )
 
 require (
-	github.com/yetiz-org/goth-secret v1.1.5
+	github.com/yetiz-org/goth-secret v1.1.6
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
 )
@@ -29,8 +29,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

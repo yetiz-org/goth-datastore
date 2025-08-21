@@ -1,11 +1,14 @@
 package datastore
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
 	secret "github.com/yetiz-org/goth-secret"
 )
@@ -163,10 +166,10 @@ func TestLoadRedisExampleSecret(t *testing.T) {
 		assert.NotNil(t, redis.slave)
 
 		// Verify the master and slave are configured correctly
-		assert.Equal(t, "localhost", redis.master.meta.Host)
-		assert.Equal(t, uint(6379), redis.master.meta.Port)
-		assert.Equal(t, "localhost", redis.slave.meta.Host)
-		assert.Equal(t, uint(6380), redis.slave.meta.Port)
+		assert.Equal(t, "localhost", redis.master.Meta().Host)
+		assert.Equal(t, uint(6379), redis.master.Meta().Port)
+		assert.Equal(t, "localhost", redis.slave.Meta().Host)
+		assert.Equal(t, uint(6380), redis.slave.Meta().Port)
 	})
 }
 
@@ -393,28 +396,31 @@ func TestRedisKeyCommands(t *testing.T) {
 		scanResult := response.GetSlice()
 		assert.Len(t, scanResult, 2, "SCAN should return exactly 2 elements: cursor and keys array")
 
-		// First element: cursor (should be int64, typically 0 for complete scan)
-		cursor := scanResult[0].GetInt64()
-		assert.GreaterOrEqual(t, cursor, int64(0), "cursor should be non-negative")
+		// Only proceed if we have the expected result structure
+		if len(scanResult) >= 2 {
+			// First element: cursor (should be int64, typically 0 for complete scan)
+			cursor := scanResult[0].GetInt64()
+			assert.GreaterOrEqual(t, cursor, int64(0), "cursor should be non-negative")
 
-		// Second element: keys array - test GetSlice functionality on RedisResponseEntity
-		keysEntity := scanResult[1]
-		keys := keysEntity.GetSlice()
+			// Second element: keys array - test GetSlice functionality on RedisResponseEntity
+			keysEntity := scanResult[1]
+			keys := keysEntity.GetSlice()
 
-		// Should find the 3 scan_test_* keys (but not other_key)
-		assert.GreaterOrEqual(t, len(keys), 3, "should find at least 3 matching keys")
+			// Should find the 3 scan_test_* keys (but not other_key)
+			assert.GreaterOrEqual(t, len(keys), 3, "should find at least 3 matching keys")
 
-		// Collect all key names for verification
-		var keyNames []string
-		for _, key := range keys {
-			keyNames = append(keyNames, key.GetString())
+			// Collect all key names for verification
+			var keyNames []string
+			for _, key := range keys {
+				keyNames = append(keyNames, key.GetString())
+			}
+
+			// Verify specific keys are present
+			assert.Contains(t, keyNames, "scan_test_1")
+			assert.Contains(t, keyNames, "scan_test_2")
+			assert.Contains(t, keyNames, "scan_test_3")
+			assert.NotContains(t, keyNames, "other_key", "pattern should exclude non-matching keys")
 		}
-
-		// Verify specific keys are present
-		assert.Contains(t, keyNames, "scan_test_1")
-		assert.Contains(t, keyNames, "scan_test_2")
-		assert.Contains(t, keyNames, "scan_test_3")
-		assert.NotContains(t, keyNames, "other_key", "pattern should exclude non-matching keys")
 
 		// Test SCAN without pattern (should return more keys)
 		responseAll := redis.Master().Scan(0, "", 100)
@@ -423,9 +429,11 @@ func TestRedisKeyCommands(t *testing.T) {
 		scanResultAll := responseAll.GetSlice()
 		assert.Len(t, scanResultAll, 2)
 
-		keysEntityAll := scanResultAll[1]
-		keysAll := keysEntityAll.GetSlice()
-		assert.GreaterOrEqual(t, len(keysAll), 4, "should find all keys including other_key")
+		if len(scanResultAll) >= 2 {
+			keysEntityAll := scanResultAll[1]
+			keysAll := keysEntityAll.GetSlice()
+			assert.GreaterOrEqual(t, len(keysAll), 4, "should find all keys including other_key")
+		}
 
 		// Test SCAN with non-matching pattern
 		responseEmpty := redis.Master().Scan(0, "non_existing_pattern_*", 100)
@@ -434,10 +442,12 @@ func TestRedisKeyCommands(t *testing.T) {
 		scanResultEmpty := responseEmpty.GetSlice()
 		assert.Len(t, scanResultEmpty, 2)
 
-		keysEntityEmpty := scanResultEmpty[1]
-		keysEmpty := keysEntityEmpty.GetSlice()
-		// Could be empty or have very few keys
-		assert.GreaterOrEqual(t, len(keysEmpty), 0)
+		if len(scanResultEmpty) >= 2 {
+			keysEntityEmpty := scanResultEmpty[1]
+			keysEmpty := keysEntityEmpty.GetSlice()
+			// Could be empty or have very few keys
+			assert.GreaterOrEqual(t, len(keysEmpty), 0)
+		}
 
 		// Cleanup
 		redis.Master().Delete("scan_test_1", "scan_test_2", "scan_test_3", "other_key")
@@ -2218,5 +2228,1165 @@ func TestRedisStringCommands(t *testing.T) {
 		assert.Contains(t, finalContent, "title：")
 		assert.Contains(t, finalContent, "Redis")
 		assert.Contains(t, finalContent, "testexample")
+	})
+}
+
+// =============================================================================
+// Mock Redis Tests - Comprehensive Testing of Mock Functionality
+// =============================================================================
+
+func TestMockRedisBasicFunctionality(t *testing.T) {
+	t.Run("NewMockRedis_Creates_Working_Instance", func(t *testing.T) {
+		mockRedis := NewMockRedis()
+		assert.NotNil(t, mockRedis)
+		assert.Equal(t, "mock", mockRedis.name)
+		assert.NotNil(t, mockRedis.Master())
+		assert.NotNil(t, mockRedis.Slave())
+	})
+
+	t.Run("NewRedisWithMock_Custom_Mocks", func(t *testing.T) {
+		masterMock := NewMockRedisOp()
+		slaveMock := NewMockRedisOp()
+		
+		mockRedis := NewRedisWithMock(masterMock, slaveMock)
+		assert.NotNil(t, mockRedis)
+		assert.Equal(t, "custom-mock", mockRedis.name)
+		assert.Equal(t, masterMock, mockRedis.Master())
+		assert.Equal(t, slaveMock, mockRedis.Slave())
+	})
+
+	t.Run("MockRedisBuilder_Fluent_Interface", func(t *testing.T) {
+		mockRedis := NewMockRedisBuilder().
+			WithResponse("GET", "test_key", "test_value", nil).
+			WithMasterResponse("SET", "master_key", int64(1), nil).
+			WithSlaveResponse("GET", "slave_key", "slave_value", nil).
+			Build()
+
+		assert.NotNil(t, mockRedis)
+		assert.Equal(t, "builder-mock", mockRedis.name)
+
+		// Test configured responses
+		getResp := mockRedis.Master().Get("test_key")
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "test_value", getResp.GetString())
+
+		setResp := mockRedis.Master().Set("master_key", "value")
+		assert.NoError(t, setResp.Error)
+		assert.Equal(t, int64(1), setResp.GetInt64())
+	})
+}
+
+func TestMockRedisResponseHandling(t *testing.T) {
+	t.Run("SetResponse_Single_Static_Response", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure static response
+		mock.SetResponse("GET", "key1", "static_value", nil)
+		mock.SetResponse("SET", "key2", int64(1), nil)
+		mock.SetResponse("GET", "key3", nil, errors.New("test error"))
+
+		// Test successful responses
+		resp1 := mock.Get("key1")
+		assert.NoError(t, resp1.Error)
+		assert.Equal(t, "static_value", resp1.GetString())
+
+		resp2 := mock.Set("key2", "value")
+		assert.NoError(t, resp2.Error)
+		assert.Equal(t, int64(1), resp2.GetInt64())
+
+		// Test error response
+		resp3 := mock.Get("key3")
+		assert.Error(t, resp3.Error)
+		assert.Equal(t, "test error", resp3.Error.Error())
+
+		// Test fallback to default nil response for unconfigured keys
+		resp4 := mock.Get("unconfigured_key")
+		assert.Nil(t, resp4.Error)
+		assert.Nil(t, resp4.data)
+	})
+
+	t.Run("SetSequentialResponses_Multiple_Calls", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure sequential responses
+		sequential := []MockResponse{
+			{Data: "first", Error: nil},
+			{Data: "second", Error: nil},
+			{Data: nil, Error: errors.New("third error")},
+			{Data: "fourth", Error: nil},
+		}
+		mock.SetSequentialResponses("GET", "seq_key", sequential)
+
+		// Test sequential calls
+		resp1 := mock.Get("seq_key")
+		assert.NoError(t, resp1.Error)
+		assert.Equal(t, "first", resp1.GetString())
+
+		resp2 := mock.Get("seq_key")
+		assert.NoError(t, resp2.Error)
+		assert.Equal(t, "second", resp2.GetString())
+
+		resp3 := mock.Get("seq_key")
+		assert.Error(t, resp3.Error)
+		assert.Equal(t, "third error", resp3.Error.Error())
+
+		resp4 := mock.Get("seq_key")
+		assert.NoError(t, resp4.Error)
+		assert.Equal(t, "fourth", resp4.GetString())
+
+		// After all responses are exhausted, should return last response
+		resp5 := mock.Get("seq_key")
+		assert.NoError(t, resp5.Error)
+		assert.Equal(t, "fourth", resp5.GetString())
+	})
+
+	t.Run("SetConditionalResponse_Based_On_Args", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure conditional responses
+		condition1 := func(cmd string, args []interface{}) bool {
+			return len(args) > 0 && args[0] == "special_key"
+		}
+		condition2 := func(cmd string, args []interface{}) bool {
+			return len(args) > 1 && args[1] == "special_value"
+		}
+
+		mock.SetConditionalResponse("GET", condition1, MockResponse{Data: "special_response", Error: nil})
+		mock.SetConditionalResponse("SET", condition2, MockResponse{Data: int64(999), Error: nil})
+
+		// Test conditional responses
+		resp1 := mock.Get("special_key")
+		assert.NoError(t, resp1.Error)
+		assert.Equal(t, "special_response", resp1.GetString())
+
+		resp2 := mock.Get("normal_key")
+		assert.Nil(t, resp2.Error)
+		assert.Nil(t, resp2.data) // Default response
+
+		resp3 := mock.Set("any_key", "special_value")
+		assert.NoError(t, resp3.Error)
+		assert.Equal(t, int64(999), resp3.GetInt64())
+
+		resp4 := mock.Set("any_key", "normal_value")
+		assert.Nil(t, resp4.Error)
+		assert.Nil(t, resp4.data) // Default response
+	})
+}
+
+func TestMockRedisCallHistory(t *testing.T) {
+	t.Run("GetCallHistory_Records_All_Calls", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Make various calls
+		mock.Get("key1")
+		mock.Set("key2", "value2")
+		mock.HSet("hash1", "field1", "value1")
+		mock.Delete("key3")
+		
+		// Check call history
+		history := mock.GetCallHistory()
+		assert.Len(t, history, 4)
+		
+		// Verify first call
+		assert.Equal(t, "GET", history[0].Command)
+		assert.Equal(t, []interface{}{"key1"}, history[0].Args)
+		
+		// Verify second call
+		assert.Equal(t, "SET", history[1].Command)
+		assert.Equal(t, []interface{}{"key2", "value2"}, history[1].Args)
+		
+		// Verify third call
+		assert.Equal(t, "HSET", history[2].Command)
+		assert.Equal(t, []interface{}{"hash1", "field1", "value1"}, history[2].Args)
+		
+		// Verify fourth call
+		assert.Equal(t, "DEL", history[3].Command)
+		assert.Equal(t, []interface{}{"key3"}, history[3].Args)
+	})
+
+	t.Run("GetCallsByCommand_Filter_By_Command", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Make multiple calls
+		mock.Get("key1")
+		mock.Set("key2", "value2")
+		mock.Get("key3")
+		mock.HSet("hash1", "field1", "value1")
+		mock.Get("key4")
+		
+		// Get only GET commands
+		getCalls := mock.GetCallsByCommand("GET")
+		assert.Len(t, getCalls, 3)
+		assert.Equal(t, "GET", getCalls[0].Command)
+		assert.Equal(t, []interface{}{"key1"}, getCalls[0].Args)
+		assert.Equal(t, "GET", getCalls[1].Command)
+		assert.Equal(t, []interface{}{"key3"}, getCalls[1].Args)
+		assert.Equal(t, "GET", getCalls[2].Command)
+		assert.Equal(t, []interface{}{"key4"}, getCalls[2].Args)
+		
+		// Get only SET commands
+		setCalls := mock.GetCallsByCommand("SET")
+		assert.Len(t, setCalls, 1)
+		assert.Equal(t, "SET", setCalls[0].Command)
+		
+		// Get only HSET commands
+		hsetCalls := mock.GetCallsByCommand("HSET")
+		assert.Len(t, hsetCalls, 1)
+		assert.Equal(t, "HSET", hsetCalls[0].Command)
+		
+		// Get non-existent command
+		noneCalls := mock.GetCallsByCommand("NONEXISTENT")
+		assert.Len(t, noneCalls, 0)
+	})
+
+	t.Run("ClearCallHistory_Resets_History", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Make some calls
+		mock.Get("key1")
+		mock.Set("key2", "value2")
+		
+		// Verify history exists
+		history := mock.GetCallHistory()
+		assert.Len(t, history, 2)
+		
+		// Clear history
+		mock.ClearCallHistory()
+		
+		// Verify history is empty
+		clearedHistory := mock.GetCallHistory()
+		assert.Len(t, clearedHistory, 0)
+		
+		// Make new calls after clearing
+		mock.Delete("key3")
+		newHistory := mock.GetCallHistory()
+		assert.Len(t, newHistory, 1)
+		assert.Equal(t, "DEL", newHistory[0].Command)
+	})
+}
+
+func TestMockRedisHashCommands(t *testing.T) {
+	// Test all 12 Hash Commands from memory with mock functionality
+	t.Run("Hash_Commands_With_Mock_Responses", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure responses for each Hash command
+		mock.SetResponse("HSET", "hash1", int64(1), nil)
+		mock.SetResponse("HGET", "hash1", "field_value", nil)
+		mock.SetResponse("HMSET", "hash1", "OK", nil)
+		mock.SetResponse("HMGET", "hash1", []interface{}{"value1", "value2"}, nil)
+		mock.SetResponse("HEXISTS", "hash1", int64(1), nil)
+		mock.SetResponse("HDEL", "hash1", int64(2), nil)
+		mock.SetResponse("HGETALL", "hash1", []interface{}{"field1", "value1", "field2", "value2"}, nil)
+		mock.SetResponse("HLEN", "hash1", int64(2), nil)
+		mock.SetResponse("HKEYS", "hash1", []interface{}{"field1", "field2"}, nil)
+		mock.SetResponse("HINCRBY", "hash1", int64(15), nil)
+		mock.SetResponse("HVALS", "hash1", []interface{}{"value1", "value2"}, nil)
+		mock.SetResponse("HSCAN", "hash1", []interface{}{0, []interface{}{"field1", "value1"}}, nil)
+
+		// Test HSet
+		hsetResp := mock.HSet("hash1", "field1", "value1")
+		assert.NoError(t, hsetResp.Error)
+		assert.Equal(t, int64(1), hsetResp.GetInt64())
+
+		// Test HGet
+		hgetResp := mock.HGet("hash1", "field1")
+		assert.NoError(t, hgetResp.Error)
+		assert.Equal(t, "field_value", hgetResp.GetString())
+
+		// Test HMSet
+		hashData := map[interface{}]interface{}{
+			"field1": "value1",
+			"field2": "value2",
+		}
+		hmsetResp := mock.HMSet("hash1", hashData)
+		assert.NoError(t, hmsetResp.Error)
+		assert.Equal(t, "OK", hmsetResp.GetString())
+
+		// Test HMGet
+		hmgetResp := mock.HMGet("hash1", "field1", "field2")
+		assert.NoError(t, hmgetResp.Error)
+		values := hmgetResp.GetSlice()
+		assert.Len(t, values, 2)
+		assert.Equal(t, "value1", values[0].GetString())
+		assert.Equal(t, "value2", values[1].GetString())
+
+		// Test HExists
+		hexistsResp := mock.HExists("hash1", "field1")
+		assert.NoError(t, hexistsResp.Error)
+		assert.Equal(t, int64(1), hexistsResp.GetInt64())
+
+		// Test HDel
+		hdelResp := mock.HDel("hash1", "field1", "field2")
+		assert.NoError(t, hdelResp.Error)
+		assert.Equal(t, int64(2), hdelResp.GetInt64())
+
+		// Test HGetAll
+		hgetallResp := mock.HGetAll("hash1")
+		assert.NoError(t, hgetallResp.Error)
+		allData := hgetallResp.GetSlice()
+		assert.Len(t, allData, 4)
+
+		// Test HLen
+		hlenResp := mock.HLen("hash1")
+		assert.NoError(t, hlenResp.Error)
+		assert.Equal(t, int64(2), hlenResp.GetInt64())
+
+		// Test HKeys
+		hkeysResp := mock.HKeys("hash1")
+		assert.NoError(t, hkeysResp.Error)
+		keys := hkeysResp.GetSlice()
+		assert.Len(t, keys, 2)
+
+		// Test HIncrBy
+		hincrbyResp := mock.HIncrBy("hash1", "counter", 5)
+		assert.NoError(t, hincrbyResp.Error)
+		assert.Equal(t, int64(15), hincrbyResp.GetInt64())
+
+		// Test HVals
+		hvalsResp := mock.HVals("hash1")
+		assert.NoError(t, hvalsResp.Error)
+		vals := hvalsResp.GetSlice()
+		assert.Len(t, vals, 2)
+
+		// Test HScan
+		hscanResp := mock.HScan("hash1", 0, "", 0)
+		assert.NoError(t, hscanResp.Error)
+		scanData := hscanResp.GetSlice()
+		assert.Len(t, scanData, 2)
+
+		// Verify call history recorded all commands
+		history := mock.GetCallHistory()
+		assert.Len(t, history, 12)
+		
+		expectedCommands := []string{"HSET", "HGET", "HMSET", "HMGET", "HEXISTS", "HDEL", "HGETALL", "HLEN", "HKEYS", "HINCRBY", "HVALS", "HSCAN"}
+		for i, expectedCmd := range expectedCommands {
+			assert.Equal(t, expectedCmd, history[i].Command)
+		}
+	})
+}
+
+func TestMockRedisStringCommands(t *testing.T) {
+	// Test all 11 String Commands from memory
+	t.Run("String_Commands_With_Mock_Responses", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure responses for each String command
+		mock.SetResponse("GET", "key1", "mock_value", nil)
+		mock.SetResponse("SET", "key1", "OK", nil)
+		mock.SetResponse("SETEX", "key1", "OK", nil)
+		mock.SetResponse("INCR", "counter", int64(5), nil)
+		mock.SetResponse("INCRBY", "counter", int64(15), nil)
+		mock.SetResponse("DECR", "counter", int64(4), nil)
+		mock.SetResponse("DECRBY", "counter", int64(10), nil)
+		mock.SetResponse("APPEND", "key1", int64(20), nil)
+		mock.SetResponse("STRLEN", "key1", int64(10), nil)
+		mock.SetResponse("GETRANGE", "key1", "moc", nil)
+		mock.SetResponse("SETRANGE", "key1", int64(15), nil)
+
+		// Test all String commands
+		getResp := mock.Get("key1")
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "mock_value", getResp.GetString())
+
+		setResp := mock.Set("key1", "value")
+		assert.NoError(t, setResp.Error)
+		assert.Equal(t, "OK", setResp.GetString())
+
+		setexResp := mock.SetExpire("key1", "value", 60)
+		assert.NoError(t, setexResp.Error)
+		assert.Equal(t, "OK", setexResp.GetString())
+
+		incrResp := mock.Incr("counter")
+		assert.NoError(t, incrResp.Error)
+		assert.Equal(t, int64(5), incrResp.GetInt64())
+
+		incrbyResp := mock.IncrBy("counter", 10)
+		assert.NoError(t, incrbyResp.Error)
+		assert.Equal(t, int64(15), incrbyResp.GetInt64())
+
+		decrResp := mock.Decr("counter")
+		assert.NoError(t, decrResp.Error)
+		assert.Equal(t, int64(4), decrResp.GetInt64())
+
+		decrbyResp := mock.DecrBy("counter", 5)
+		assert.NoError(t, decrbyResp.Error)
+		assert.Equal(t, int64(10), decrbyResp.GetInt64())
+
+		appendResp := mock.Append("key1", " suffix")
+		assert.NoError(t, appendResp.Error)
+		assert.Equal(t, int64(20), appendResp.GetInt64())
+
+		strlenResp := mock.StrLen("key1")
+		assert.NoError(t, strlenResp.Error)
+		assert.Equal(t, int64(10), strlenResp.GetInt64())
+
+		getrangeResp := mock.GetRange("key1", 0, 2)
+		assert.NoError(t, getrangeResp.Error)
+		assert.Equal(t, "moc", getrangeResp.GetString())
+
+		setrangeResp := mock.SetRange("key1", 5, "new")
+		assert.NoError(t, setrangeResp.Error)
+		assert.Equal(t, int64(15), setrangeResp.GetInt64())
+
+		// Verify call history
+		history := mock.GetCallHistory()
+		assert.Len(t, history, 11)
+		
+		expectedCommands := []string{"GET", "SET", "SETEX", "INCR", "INCRBY", "DECR", "DECRBY", "APPEND", "STRLEN", "GETRANGE", "SETRANGE"}
+		for i, expectedCmd := range expectedCommands {
+			assert.Equal(t, expectedCmd, history[i].Command)
+		}
+	})
+}
+
+func TestMockRedisBackwardCompatibility(t *testing.T) {
+	t.Run("Existing_API_Unchanged_With_Mock", func(t *testing.T) {
+		// Test that existing code patterns still work with mock
+		mockRedis := NewMockRedis()
+		
+		// Configure some mock responses
+		masterMock := mockRedis.Master().(*MockRedisOp)
+		slaveMock := mockRedis.Slave().(*MockRedisOp)
+		
+		masterMock.SetResponse("SET", "test_key", "OK", nil)
+		masterMock.SetResponse("GET", "test_key", "test_value", nil)
+		slaveMock.SetResponse("GET", "test_key", "test_value", nil)
+
+		// Test Master/Slave pattern still works
+		master := mockRedis.Master()
+		slave := mockRedis.Slave()
+		
+		assert.NotNil(t, master)
+		assert.NotNil(t, slave)
+		
+		// Test method chaining still works
+		setResp := master.Set("test_key", "value")
+		assert.NoError(t, setResp.Error)
+		assert.Equal(t, "OK", setResp.GetString())
+		
+		getResp := slave.Get("test_key")
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "test_value", getResp.GetString())
+		
+		// Test interface methods work
+		assert.NotNil(t, master.Pool())
+		assert.NotNil(t, master.Meta())
+		assert.GreaterOrEqual(t, master.ActiveCount(), 0)
+		assert.GreaterOrEqual(t, master.IdleCount(), 0)
+	})
+
+	t.Run("Real_Redis_Interface_Still_Works", func(t *testing.T) {
+		// This test verifies that real Redis instances still work
+		// when using the interface-based design
+		
+		// Save original secret path and restore it after test
+		originalPath := secret.PATH
+		defer func() {
+			secret.PATH = originalPath
+		}()
+
+		// Set secret path to the example directory
+		wd, _ := os.Getwd()
+		secret.PATH = filepath.Join(wd, "example")
+
+		realRedis := NewRedis("test")
+		assert.NotNil(t, realRedis)
+		
+		// Test interface methods work with real Redis
+		master := realRedis.Master()
+		slave := realRedis.Slave()
+		
+		assert.NotNil(t, master)
+		assert.NotNil(t, slave)
+		
+		// Test that the interface methods exist and don't panic
+		assert.NotNil(t, master.Pool())
+		assert.NotNil(t, master.Meta())
+		assert.GreaterOrEqual(t, master.ActiveCount(), 0)
+		assert.GreaterOrEqual(t, master.IdleCount(), 0)
+		
+		// The actual Redis operations would require a real Redis server
+		// So we just verify the interface methods are accessible
+	})
+}
+
+func TestMockRedisConnectionAndPool(t *testing.T) {
+	t.Run("Mock_Connection_And_Pool_Methods", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Test pool info methods
+		assert.GreaterOrEqual(t, mock.ActiveCount(), 0)
+		assert.GreaterOrEqual(t, mock.IdleCount(), 0)
+		
+		// Test meta info
+		meta := mock.Meta()
+		assert.Equal(t, "mock", meta.Host)
+		assert.Equal(t, uint(6379), meta.Port)
+		
+		// Test connection methods don't panic
+		assert.NotNil(t, mock.Pool())
+		assert.NotNil(t, mock.Conn())
+		assert.NoError(t, mock.Close())
+		
+		// Test Exec method
+		var executed bool
+		err := mock.Exec(func(conn redis.Conn) {
+			executed = true
+		})
+		assert.NoError(t, err)
+		assert.True(t, executed)
+	})
+}
+
+func TestMockRedisPipeline(t *testing.T) {
+	t.Run("Pipeline_With_Mock_Responses", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure responses for pipeline commands
+		mock.SetResponse("PIPELINE", "", []interface{}{
+			&RedisResponse{RedisResponseEntity{data: "OK"}, nil},
+			&RedisResponse{RedisResponseEntity{data: int64(1)}, nil},
+			&RedisResponse{RedisResponseEntity{data: "value"}, nil},
+		}, nil)
+
+		// Create pipeline commands
+		cmds := []RedisPipelineCmd{
+			{Cmd: "SET", Args: []interface{}{"key1", "value1"}},
+			{Cmd: "INCR", Args: []interface{}{"counter"}},
+			{Cmd: "GET", Args: []interface{}{"key2"}},
+		}
+
+		// Execute pipeline
+		responses := mock.Pipeline(cmds...)
+		assert.Len(t, responses, 3)
+		
+		assert.NoError(t, responses[0].Error)
+		assert.Equal(t, "OK", responses[0].GetString())
+		
+		assert.NoError(t, responses[1].Error)
+		assert.Equal(t, int64(1), responses[1].GetInt64())
+		
+		assert.NoError(t, responses[2].Error)
+		assert.Equal(t, "value", responses[2].GetString())
+
+		// Verify call history
+		history := mock.GetCallHistory()
+		assert.Len(t, history, 1)
+		assert.Equal(t, "PIPELINE", history[0].Command)
+	})
+}
+
+func TestMockRedisListCommands(t *testing.T) {
+	t.Run("List_Commands_With_Mock_Responses", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure responses for all list commands
+		mock.SetResponse("LPUSH", "list1", int64(1), nil)
+		mock.SetResponse("LPUSHX", "list1", int64(1), nil)
+		mock.SetResponse("LPOP", "list1", "item1", nil)
+		mock.SetResponse("LRANGE", "list1", []interface{}{"item1", "item2"}, nil)
+		mock.SetResponse("LSET", "list1", "OK", nil)
+		mock.SetResponse("LREM", "list1", int64(1), nil)
+		mock.SetResponse("LTRIM", "list1", "OK", nil)
+		mock.SetResponse("LINDEX", "list1", "item1", nil)
+		mock.SetResponse("LINSERT", "list1", int64(3), nil)
+		mock.SetResponse("LLEN", "list1", int64(2), nil)
+		mock.SetResponse("LMOVE", "list1", "moved_item", nil)
+		mock.SetResponse("LMPOP", "*", []interface{}{"list1", []interface{}{"item1"}}, nil)
+		mock.SetResponse("LPOS", "list1", int64(0), nil)
+		mock.SetResponse("RPOP", "list1", "last_item", nil)
+		mock.SetResponse("RPOPLPUSH", "list1", "moved_item", nil)
+		mock.SetResponse("RPUSH", "list1", int64(2), nil)
+		mock.SetResponse("RPUSHX", "list1", int64(2), nil)
+
+		// Test all list commands
+		resp1 := mock.LPush("list1", "item1")
+		assert.NoError(t, resp1.Error)
+		assert.Equal(t, int64(1), resp1.GetInt64())
+
+		resp2 := mock.LPushX("list1", "item0")
+		assert.NoError(t, resp2.Error)
+		assert.Equal(t, int64(1), resp2.GetInt64())
+
+		resp3 := mock.LPop("list1")
+		assert.NoError(t, resp3.Error)
+		assert.Equal(t, "item1", resp3.GetString())
+
+		resp4 := mock.LRange("list1", 0, -1)
+		assert.NoError(t, resp4.Error)
+		assert.Equal(t, []interface{}{"item1", "item2"}, resp4.data)
+
+		resp5 := mock.LSet("list1", 0, "new_item")
+		assert.NoError(t, resp5.Error)
+		assert.Equal(t, "OK", resp5.GetString())
+
+		resp6 := mock.LRem("list1", 1, "item1")
+		assert.NoError(t, resp6.Error)
+		assert.Equal(t, int64(1), resp6.GetInt64())
+
+		resp7 := mock.LTrim("list1", 0, 1)
+		assert.NoError(t, resp7.Error)
+		assert.Equal(t, "OK", resp7.GetString())
+
+		resp8 := mock.LIndex("list1", 0)
+		assert.NoError(t, resp8.Error)
+		assert.Equal(t, "item1", resp8.GetString())
+
+		resp9 := mock.LInsert("list1", "BEFORE", "item1", "new_item")
+		assert.NoError(t, resp9.Error)
+		assert.Equal(t, int64(3), resp9.GetInt64())
+
+		resp10 := mock.LLen("list1")
+		assert.NoError(t, resp10.Error)
+		assert.Equal(t, int64(2), resp10.GetInt64())
+
+		resp11 := mock.LMove("list1", "list2", "LEFT", "RIGHT")
+		assert.NoError(t, resp11.Error)
+		assert.Equal(t, "moved_item", resp11.GetString())
+
+		resp12 := mock.LMPop(1, "LEFT", "list1")
+		assert.NoError(t, resp12.Error)
+		assert.Equal(t, []interface{}{"list1", []interface{}{"item1"}}, resp12.data)
+
+		resp13 := mock.LPos("list1", "item1")
+		assert.NoError(t, resp13.Error)
+		assert.Equal(t, int64(0), resp13.GetInt64())
+
+		resp14 := mock.RPop("list1")
+		assert.NoError(t, resp14.Error)
+		assert.Equal(t, "last_item", resp14.GetString())
+
+		resp15 := mock.RPopLPush("list1", "list2")
+		assert.NoError(t, resp15.Error)
+		assert.Equal(t, "moved_item", resp15.GetString())
+
+		resp16 := mock.RPush("list1", "item2")
+		assert.NoError(t, resp16.Error)
+		assert.Equal(t, int64(2), resp16.GetInt64())
+
+		resp17 := mock.RPushX("list1", "item3")
+		assert.NoError(t, resp17.Error)
+		assert.Equal(t, int64(2), resp17.GetInt64())
+
+		// Verify call history - should have 17 commands (corrected count)
+		history := mock.GetCallHistory()
+		assert.Equal(t, 17, len(history)) // All 17 list command calls
+		
+		// Verify specific commands were called
+		lpushCalls := mock.GetCallsByCommand("LPUSH")
+		assert.Equal(t, 1, len(lpushCalls))
+		assert.Equal(t, []interface{}{"list1", "item1"}, lpushCalls[0].Args)
+	})
+}
+
+func TestMockRedisSetCommands(t *testing.T) {
+	t.Run("Set_Commands_With_Mock_Responses", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure responses for all set commands
+		mock.SetResponse("SADD", "set1", int64(1), nil)
+		mock.SetResponse("SCARD", "set1", int64(3), nil)
+		mock.SetResponse("SDIFF", "set1", []interface{}{"item1"}, nil)
+		mock.SetResponse("SDIFFSTORE", "dest", int64(1), nil)
+		mock.SetResponse("SINTER", "set1", []interface{}{"common"}, nil)
+		mock.SetResponse("SINTERCARD", "*", int64(1), nil)
+		mock.SetResponse("SINTERSTORE", "dest", int64(1), nil)
+		mock.SetResponse("SISMEMBER", "set1", int64(1), nil)
+		mock.SetResponse("SMEMBERS", "set1", []interface{}{"item1", "item2", "item3"}, nil)
+		mock.SetResponse("SMISMEMBER", "set1", []interface{}{1, 0, 1}, nil)
+		mock.SetResponse("SMOVE", "set1", int64(1), nil)
+		mock.SetResponse("SPOP", "set1", "random_item", nil)
+		mock.SetResponse("SRANDMEMBER", "set1", "random_item", nil)
+		mock.SetResponse("SREM", "set1", int64(1), nil)
+		mock.SetResponse("SSCAN", "*", []interface{}{"0", []interface{}{"item1", "item2"}}, nil)
+		mock.SetResponse("SUNION", "set1", []interface{}{"item1", "item2", "item3", "item4"}, nil)
+		mock.SetResponse("SUNIONSTORE", "dest", int64(4), nil)
+
+		// Test all set commands
+		resp1 := mock.SAdd("set1", "item1")
+		assert.NoError(t, resp1.Error)
+		assert.Equal(t, int64(1), resp1.GetInt64())
+
+		resp2 := mock.SCard("set1")
+		assert.NoError(t, resp2.Error)
+		assert.Equal(t, int64(3), resp2.GetInt64())
+
+		resp3 := mock.SDiff("set1", "set2")
+		assert.NoError(t, resp3.Error)
+		assert.Equal(t, []interface{}{"item1"}, resp3.data)
+
+		resp4 := mock.SDiffStore("dest", "set1", "set2")
+		assert.NoError(t, resp4.Error)
+		assert.Equal(t, int64(1), resp4.GetInt64())
+
+		resp5 := mock.SInter("set1", "set2")
+		assert.NoError(t, resp5.Error)
+		assert.Equal(t, []interface{}{"common"}, resp5.data)
+
+		resp6 := mock.SInterCard(1, "set1", "set2")
+		assert.NoError(t, resp6.Error)
+		assert.Equal(t, int64(1), resp6.GetInt64())
+
+		resp7 := mock.SInterStore("dest", "set1", "set2")
+		assert.NoError(t, resp7.Error)
+		assert.Equal(t, int64(1), resp7.GetInt64())
+
+		resp8 := mock.SIsMember("set1", "item1")
+		assert.NoError(t, resp8.Error)
+		assert.Equal(t, int64(1), resp8.GetInt64())
+
+		resp9 := mock.SMembers("set1")
+		assert.NoError(t, resp9.Error)
+		assert.Equal(t, []interface{}{"item1", "item2", "item3"}, resp9.data)
+
+		resp10 := mock.SMIsMember("set1", "item1", "item4", "item2")
+		assert.NoError(t, resp10.Error)
+		assert.Equal(t, []interface{}{1, 0, 1}, resp10.data)
+
+		resp11 := mock.SMove("set1", "set2", "item1")
+		assert.NoError(t, resp11.Error)
+		assert.Equal(t, int64(1), resp11.GetInt64())
+
+		resp12 := mock.SPop("set1")
+		assert.NoError(t, resp12.Error)
+		assert.Equal(t, "random_item", resp12.GetString())
+
+		resp13 := mock.SRandMember("set1")
+		assert.NoError(t, resp13.Error)
+		assert.Equal(t, "random_item", resp13.GetString())
+
+		resp14 := mock.SRem("set1", "item1")
+		assert.NoError(t, resp14.Error)
+		assert.Equal(t, int64(1), resp14.GetInt64())
+
+		resp15 := mock.SScan("set1", 0, "", 10)
+		assert.NoError(t, resp15.Error)
+		assert.Equal(t, []interface{}{"0", []interface{}{"item1", "item2"}}, resp15.data)
+
+		resp16 := mock.SUnion("set1", "set2")
+		assert.NoError(t, resp16.Error)
+		assert.Equal(t, []interface{}{"item1", "item2", "item3", "item4"}, resp16.data)
+
+		resp17 := mock.SUnionStore("dest", "set1", "set2")
+		assert.NoError(t, resp17.Error)
+		assert.Equal(t, int64(4), resp17.GetInt64())
+
+		// Verify call history - should have 17 commands
+		history := mock.GetCallHistory()
+		assert.Equal(t, 17, len(history))
+		
+		// Verify specific commands were called
+		saddCalls := mock.GetCallsByCommand("SADD")
+		assert.Equal(t, 1, len(saddCalls))
+		assert.Equal(t, []interface{}{"set1", "item1"}, saddCalls[0].Args)
+	})
+}
+
+func TestMockRedisSortedSetCommands(t *testing.T) {
+	t.Run("SortedSet_Commands_With_Mock_Responses", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure responses for all sorted set commands (30 commands)
+		mock.SetResponse("ZADD", "zset1", int64(1), nil)
+		mock.SetResponse("ZCARD", "zset1", int64(5), nil)
+		mock.SetResponse("ZCOUNT", "zset1", int64(3), nil)
+		mock.SetResponse("ZDIFF", "*", []interface{}{"member1"}, nil)
+		mock.SetResponse("ZDIFFSTORE", "dest", int64(1), nil)
+		mock.SetResponse("ZINCRBY", "zset1", float64(1.5), nil)
+		mock.SetResponse("ZINTER", "*", []interface{}{"common1"}, nil)
+		mock.SetResponse("ZINTERCARD", "*", int64(1), nil)
+		mock.SetResponse("ZINTERSTORE", "dest", int64(1), nil)
+		mock.SetResponse("ZLEXCOUNT", "zset1", int64(2), nil)
+		mock.SetResponse("ZMPOP", "*", []interface{}{"zset1", []interface{}{[]interface{}{"member1", 1.0}}}, nil)
+		mock.SetResponse("ZMSCORE", "zset1", []interface{}{1.0, 2.0}, nil)
+		mock.SetResponse("ZPOPMAX", "zset1", []interface{}{"member1", 1.0}, nil)
+		mock.SetResponse("ZPOPMIN", "zset1", []interface{}{"member1", 1.0}, nil)
+		mock.SetResponse("ZRANDMEMBER", "zset1", "random_member", nil)
+		mock.SetResponse("ZRANGE", "zset1", []interface{}{"member1", "member2"}, nil)
+		mock.SetResponse("ZRANGEBYLEX", "zset1", []interface{}{"member1"}, nil)
+		mock.SetResponse("ZRANGEBYSCORE", "zset1", []interface{}{"member1"}, nil)
+		mock.SetResponse("ZRANGESTORE", "dest", int64(2), nil)
+		mock.SetResponse("ZREVRANGE", "zset1", []interface{}{"member2", "member1"}, nil)
+		mock.SetResponse("ZREVRANGEBYLEX", "zset1", []interface{}{"member1"}, nil)
+		mock.SetResponse("ZREVRANGEBYSCORE", "zset1", []interface{}{"member1"}, nil)
+		mock.SetResponse("ZRANK", "zset1", int64(0), nil)
+		mock.SetResponse("ZREM", "zset1", int64(1), nil)
+		mock.SetResponse("ZREMRANGEBYLEX", "zset1", int64(1), nil)
+		mock.SetResponse("ZREMRANGEBYRANK", "zset1", int64(1), nil)
+		mock.SetResponse("ZREMRANGEBYSCORE", "zset1", int64(1), nil)
+		mock.SetResponse("ZREVRANK", "zset1", int64(4), nil)
+		mock.SetResponse("ZSCAN", "*", []interface{}{"0", []interface{}{"member1", "1.0"}}, nil)
+		mock.SetResponse("ZSCORE", "zset1", float64(1.5), nil)
+		mock.SetResponse("ZUNION", "*", []interface{}{"member1", "member2"}, nil)
+		mock.SetResponse("ZUNIONSTORE", "dest", int64(3), nil)
+
+		// Test all sorted set commands (30 commands)
+		resp1 := mock.ZAdd("zset1", 1.0, "member1")
+		assert.NoError(t, resp1.Error)
+		assert.Equal(t, int64(1), resp1.GetInt64())
+
+		resp2 := mock.ZCard("zset1")
+		assert.NoError(t, resp2.Error)
+		assert.Equal(t, int64(5), resp2.GetInt64())
+
+		resp3 := mock.ZCount("zset1", "1", "5")
+		assert.NoError(t, resp3.Error)
+		assert.Equal(t, int64(3), resp3.GetInt64())
+
+		resp4 := mock.ZDiff("zset1", "zset2")
+		assert.NoError(t, resp4.Error)
+		assert.Equal(t, []interface{}{"member1"}, resp4.data)
+
+		resp5 := mock.ZDiffStore("dest", "zset1", "zset2")
+		assert.NoError(t, resp5.Error)
+		assert.Equal(t, int64(1), resp5.GetInt64())
+
+		resp6 := mock.ZIncrBy("zset1", 1.5, "member1")
+		assert.NoError(t, resp6.Error)
+		assert.Equal(t, float64(1.5), resp6.GetFloat64())
+
+		resp7 := mock.ZInter("zset1", "zset2")
+		assert.NoError(t, resp7.Error)
+		assert.Equal(t, []interface{}{"common1"}, resp7.data)
+
+		resp8 := mock.ZInterCard(1, "zset1", "zset2")
+		assert.NoError(t, resp8.Error)
+		assert.Equal(t, int64(1), resp8.GetInt64())
+
+		resp9 := mock.ZInterStore("dest", "zset1", "zset2")
+		assert.NoError(t, resp9.Error)
+		assert.Equal(t, int64(1), resp9.GetInt64())
+
+		resp10 := mock.ZLexCount("zset1", "[a", "[z")
+		assert.NoError(t, resp10.Error)
+		assert.Equal(t, int64(2), resp10.GetInt64())
+
+		resp11 := mock.ZMPop(1, "MAX", "zset1")
+		assert.NoError(t, resp11.Error)
+		assert.NotNil(t, resp11.data)
+
+		resp12 := mock.ZMScore("zset1", "member1", "member2")
+		assert.NoError(t, resp12.Error)
+		assert.Equal(t, []interface{}{1.0, 2.0}, resp12.data)
+
+		resp13 := mock.ZPopMax("zset1")
+		assert.NoError(t, resp13.Error)
+		assert.Equal(t, []interface{}{"member1", 1.0}, resp13.data)
+
+		resp14 := mock.ZPopMin("zset1")
+		assert.NoError(t, resp14.Error)
+		assert.Equal(t, []interface{}{"member1", 1.0}, resp14.data)
+
+		resp15 := mock.ZRandMember("zset1")
+		assert.NoError(t, resp15.Error)
+		assert.Equal(t, "random_member", resp15.GetString())
+
+		resp16 := mock.ZRange("zset1", 0, -1)
+		assert.NoError(t, resp16.Error)
+		assert.Equal(t, []interface{}{"member1", "member2"}, resp16.data)
+
+		resp17 := mock.ZRangeByLex("zset1", "[a", "[z")
+		assert.NoError(t, resp17.Error)
+		assert.Equal(t, []interface{}{"member1"}, resp17.data)
+
+		resp18 := mock.ZRangeByScore("zset1", "1", "5")
+		assert.NoError(t, resp18.Error)
+		assert.Equal(t, []interface{}{"member1"}, resp18.data)
+
+		resp19 := mock.ZRangeStore("dest", "zset1", 0, 1)
+		assert.NoError(t, resp19.Error)
+		assert.Equal(t, int64(2), resp19.GetInt64())
+
+		resp20 := mock.ZRevRange("zset1", 0, -1)
+		assert.NoError(t, resp20.Error)
+		assert.Equal(t, []interface{}{"member2", "member1"}, resp20.data)
+
+		resp21 := mock.ZRevRangeByLex("zset1", "[z", "[a")
+		assert.NoError(t, resp21.Error)
+		assert.Equal(t, []interface{}{"member1"}, resp21.data)
+
+		resp22 := mock.ZRevRangeByScore("zset1", "5", "1")
+		assert.NoError(t, resp22.Error)
+		assert.Equal(t, []interface{}{"member1"}, resp22.data)
+
+		resp23 := mock.ZRank("zset1", "member1")
+		assert.NoError(t, resp23.Error)
+		assert.Equal(t, int64(0), resp23.GetInt64())
+
+		resp24 := mock.ZRem("zset1", "member1")
+		assert.NoError(t, resp24.Error)
+		assert.Equal(t, int64(1), resp24.GetInt64())
+
+		resp25 := mock.ZRemRangeByLex("zset1", "[a", "[m")
+		assert.NoError(t, resp25.Error)
+		assert.Equal(t, int64(1), resp25.GetInt64())
+
+		resp26 := mock.ZRemRangeByRank("zset1", 0, 1)
+		assert.NoError(t, resp26.Error)
+		assert.Equal(t, int64(1), resp26.GetInt64())
+
+		resp27 := mock.ZRemRangeByScore("zset1", "1", "3")
+		assert.NoError(t, resp27.Error)
+		assert.Equal(t, int64(1), resp27.GetInt64())
+
+		resp28 := mock.ZRevRank("zset1", "member1")
+		assert.NoError(t, resp28.Error)
+		assert.Equal(t, int64(4), resp28.GetInt64())
+
+		resp29 := mock.ZScan("zset1", 0, "", 10)
+		assert.NoError(t, resp29.Error)
+		assert.Equal(t, []interface{}{"0", []interface{}{"member1", "1.0"}}, resp29.data)
+
+		resp30 := mock.ZScore("zset1", "member1")
+		assert.NoError(t, resp30.Error)
+		assert.Equal(t, float64(1.5), resp30.GetFloat64())
+
+		resp31 := mock.ZUnion("zset1", "zset2")
+		assert.NoError(t, resp31.Error)
+		assert.Equal(t, []interface{}{"member1", "member2"}, resp31.data)
+
+		resp32 := mock.ZUnionStore("dest", "zset1", "zset2")
+		assert.NoError(t, resp32.Error)
+		assert.Equal(t, int64(3), resp32.GetInt64())
+
+		// Verify call history - should have 32 commands (30 original + 2 union commands)
+		history := mock.GetCallHistory()
+		assert.Equal(t, 32, len(history))
+		
+		// Verify specific commands were called
+		zaddCalls := mock.GetCallsByCommand("ZADD")
+		assert.Equal(t, 1, len(zaddCalls))
+		assert.Equal(t, []interface{}{"zset1", 1.0, "member1"}, zaddCalls[0].Args)
+	})
+}
+
+func TestMockRedisKeyTTLCommands(t *testing.T) {
+	t.Run("KeyTTL_Commands_With_Mock_Responses", func(t *testing.T) {
+		mock := NewMockRedisOp()
+		
+		// Configure responses for all key/TTL commands - use actual Redis command names
+		mock.SetResponse("EXPIRE", "*", int64(1), nil)
+		mock.SetResponse("DEL", "*", int64(1), nil)
+		mock.SetResponse("KEYS", "*", []interface{}{"key1", "key2", "key3"}, nil)
+		mock.SetResponse("EXISTS", "*", int64(1), nil)
+		mock.SetResponse("COPY", "*", int64(1), nil)
+		mock.SetResponse("DUMP", "*", []byte("serialized_data"), nil)
+		mock.SetResponse("TTL", "*", int64(3600), nil)
+		mock.SetResponse("PTTL", "*", int64(3600000), nil)
+		mock.SetResponse("TYPE", "*", "string", nil)
+		mock.SetResponse("RANDOMKEY", "", "random_key", nil)
+		mock.SetResponse("RENAME", "*", "OK", nil)
+		mock.SetResponse("RENAMENX", "*", int64(1), nil)
+		mock.SetResponse("TOUCH", "*", int64(1), nil)
+		mock.SetResponse("UNLINK", "*", int64(1), nil)
+		mock.SetResponse("PERSIST", "*", int64(1), nil)
+		mock.SetResponse("FLUSHDB", "", "OK", nil)
+		mock.SetResponse("FLUSHALL", "", "OK", nil)
+		mock.SetResponse("SCAN", "*", []interface{}{"0", []interface{}{"key1", "key2"}}, nil)
+		mock.SetResponse("PING", "", "PONG", nil)
+
+		// Test all key/TTL commands (19 total calls)
+		resp1 := mock.Expire("key1", 3600)
+		assert.NoError(t, resp1.Error)
+		assert.Equal(t, int64(1), resp1.GetInt64())
+
+		resp2 := mock.Delete("key1")
+		assert.NoError(t, resp2.Error)
+		assert.Equal(t, int64(1), resp2.GetInt64())
+
+		resp3 := mock.Keys("*")
+		assert.NoError(t, resp3.Error)
+		assert.Equal(t, []interface{}{"key1", "key2", "key3"}, resp3.data)
+
+		resp4 := mock.Exists("key1")
+		assert.NoError(t, resp4.Error)
+		assert.Equal(t, int64(1), resp4.GetInt64())
+
+		resp5 := mock.Copy("key1", "key2")
+		assert.NoError(t, resp5.Error)
+		assert.Equal(t, int64(1), resp5.GetInt64())
+
+		resp6 := mock.Dump("key1")
+		assert.NoError(t, resp6.Error)
+		assert.Equal(t, []byte("serialized_data"), resp6.GetBytes())
+
+		resp7 := mock.TTL("key1")
+		assert.NoError(t, resp7.Error)
+		assert.Equal(t, int64(3600), resp7.GetInt64())
+
+		resp8 := mock.PTTL("key1")
+		assert.NoError(t, resp8.Error)
+		assert.Equal(t, int64(3600000), resp8.GetInt64())
+
+		resp9 := mock.Type("key1")
+		assert.NoError(t, resp9.Error)
+		assert.Equal(t, "string", resp9.GetString())
+
+		resp10 := mock.RandomKey()
+		assert.NoError(t, resp10.Error)
+		assert.Equal(t, "random_key", resp10.GetString())
+
+		resp11 := mock.Rename("key1", "new_key")
+		assert.NoError(t, resp11.Error)
+		assert.Equal(t, "OK", resp11.GetString())
+
+		resp12 := mock.RenameNX("key1", "new_key2")
+		assert.NoError(t, resp12.Error)
+		assert.Equal(t, int64(1), resp12.GetInt64())
+
+		resp13 := mock.Touch("key1")
+		assert.NoError(t, resp13.Error)
+		assert.Equal(t, int64(1), resp13.GetInt64())
+
+		resp14 := mock.Unlink("key1")
+		assert.NoError(t, resp14.Error)
+		assert.Equal(t, int64(1), resp14.GetInt64())
+
+		resp15 := mock.Persist("key1")
+		assert.NoError(t, resp15.Error)
+		assert.Equal(t, int64(1), resp15.GetInt64())
+
+		resp16 := mock.FlushDB()
+		assert.NoError(t, resp16.Error)
+		assert.Equal(t, "OK", resp16.GetString())
+
+		resp17 := mock.FlushAll()
+		assert.NoError(t, resp17.Error)
+		assert.Equal(t, "OK", resp17.GetString())
+
+		resp18 := mock.Scan(0, "", 10)
+		assert.NoError(t, resp18.Error)
+		assert.Equal(t, []interface{}{"0", []interface{}{"key1", "key2"}}, resp18.data)
+
+		resp19 := mock.Ping()
+		assert.NoError(t, resp19.Error)
+		assert.Equal(t, "PONG", resp19.GetString())
+
+		// Verify call history - should have 19 commands
+		history := mock.GetCallHistory()
+		assert.Equal(t, 19, len(history))
+		
+		// Verify specific commands were called
+		expireCalls := mock.GetCallsByCommand("EXPIRE")
+		assert.Equal(t, 1, len(expireCalls))
+		assert.Equal(t, []interface{}{"key1", int64(3600)}, expireCalls[0].Args)
+	})
+}
+
+// Benchmark tests comparing Real Redis vs Mock Redis performance
+func BenchmarkRedisOperations(b *testing.B) {
+	// Setup real Redis for benchmarking
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+	
+	realRedis := NewRedis("test")
+	if realRedis == nil {
+		b.Skip("Skipping benchmark - Redis not available")
+		return
+	}
+
+	// Setup Mock Redis
+	mockRedis := NewMockRedis()
+	mockOp := mockRedis.Master().(*MockRedisOp)
+	
+	// Configure common mock responses
+	mockOp.SetResponse("SET", "*", "OK", nil)
+	mockOp.SetResponse("GET", "*", "test_value", nil)
+	mockOp.SetResponse("HSET", "*", int64(1), nil)
+	mockOp.SetResponse("HGET", "*", "test_field_value", nil)
+	mockOp.SetResponse("LPUSH", "*", int64(1), nil)
+	mockOp.SetResponse("LPOP", "*", "test_list_item", nil)
+
+	b.Run("String_Operations", func(b *testing.B) {
+		b.Run("Real_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				key := fmt.Sprintf("bench_key_%d", i%1000)
+				realRedis.Master().Set(key, "benchmark_value")
+				realRedis.Master().Get(key)
+			}
+		})
+
+		b.Run("Mock_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				key := fmt.Sprintf("bench_key_%d", i%1000)
+				mockRedis.Master().Set(key, "benchmark_value")
+				mockRedis.Master().Get(key)
+			}
+		})
+	})
+
+	b.Run("Hash_Operations", func(b *testing.B) {
+		b.Run("Real_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				key := fmt.Sprintf("bench_hash_%d", i%1000)
+				field := fmt.Sprintf("field_%d", i%100)
+				realRedis.Master().HSet(key, field, "benchmark_hash_value")
+				realRedis.Master().HGet(key, field)
+			}
+		})
+
+		b.Run("Mock_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				key := fmt.Sprintf("bench_hash_%d", i%1000)
+				field := fmt.Sprintf("field_%d", i%100)
+				mockRedis.Master().HSet(key, field, "benchmark_hash_value")
+				mockRedis.Master().HGet(key, field)
+			}
+		})
+	})
+
+	b.Run("List_Operations", func(b *testing.B) {
+		b.Run("Real_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				key := fmt.Sprintf("bench_list_%d", i%1000)
+				realRedis.Master().LPush(key, fmt.Sprintf("item_%d", i))
+				realRedis.Master().LPop(key)
+			}
+		})
+
+		b.Run("Mock_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				key := fmt.Sprintf("bench_list_%d", i%1000)
+				mockRedis.Master().LPush(key, fmt.Sprintf("item_%d", i))
+				mockRedis.Master().LPop(key)
+			}
+		})
+	})
+
+	b.Run("Pipeline_Operations", func(b *testing.B) {
+		// Configure mock pipeline response
+		mockOp.SetResponse("PIPELINE", "", []interface{}{
+			&RedisResponse{RedisResponseEntity: RedisResponseEntity{data: "OK"}},
+			&RedisResponse{RedisResponseEntity: RedisResponseEntity{data: "test_value"}},
+		}, nil)
+
+		b.Run("Real_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				cmds := []RedisPipelineCmd{
+					{Cmd: "SET", Args: []interface{}{fmt.Sprintf("pipe_key_%d", i), "pipe_value"}},
+					{Cmd: "GET", Args: []interface{}{fmt.Sprintf("pipe_key_%d", i)}},
+				}
+				realRedis.Master().Pipeline(cmds...)
+			}
+		})
+
+		b.Run("Mock_Redis", func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				cmds := []RedisPipelineCmd{
+					{Cmd: "SET", Args: []interface{}{fmt.Sprintf("pipe_key_%d", i), "pipe_value"}},
+					{Cmd: "GET", Args: []interface{}{fmt.Sprintf("pipe_key_%d", i)}},
+				}
+				mockRedis.Master().Pipeline(cmds...)
+			}
+		})
 	})
 }

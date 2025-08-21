@@ -18,21 +18,21 @@ import (
 type Cassandra struct {
 	name    string // Profile name used for configuration
 	profile secret.Cassandra
-	writer  *CassandraOp // Write operations handler
-	reader  *CassandraOp // Read operations handler
+	writer  CassandraOperator // Write operations handler
+	reader  CassandraOperator // Read operations handler
 }
 
 func (c *Cassandra) Profile() secret.Cassandra {
 	return c.profile
 }
 
-// Writer returns the CassandraOp configured for write operations.
-func (c *Cassandra) Writer() *CassandraOp {
+// Writer returns the CassandraOperator configured for write operations.
+func (c *Cassandra) Writer() CassandraOperator {
 	return c.writer
 }
 
-// Reader returns the CassandraOp configured for read operations.
-func (c *Cassandra) Reader() *CassandraOp {
+// Reader returns the CassandraOperator configured for read operations.
+func (c *Cassandra) Reader() CassandraOperator {
 	return c.reader
 }
 
@@ -69,6 +69,11 @@ func (c *CassandraOp) Config() *gocql.ClusterConfig {
 
 func (c *CassandraOp) ColumnsMetadata() map[string]CassandraColumnMetadata {
 	return c.columnsMetadata
+}
+
+// SetMaxRetryAttempt sets the maximum retry attempts for testing purposes
+func (c *CassandraOp) SetMaxRetryAttempt(maxRetry int) {
+	c.MaxRetryAttempt = maxRetry
 }
 
 func (c *CassandraOp) Exec(f func(session *gocql.Session)) error {

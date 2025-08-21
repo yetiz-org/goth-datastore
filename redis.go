@@ -37,23 +37,23 @@ var DefaultRedisWait = false
 // This type holds no business logic; it wires secret-loaded endpoints to pools.
 type Redis struct {
 	name   string
-	master *RedisOp
-	slave  *RedisOp
+	master RedisOperator
+	slave  RedisOperator
 }
 
-// Master returns the master RedisOp for primary/write operations.
+// Master returns the master RedisOperator for primary/write operations.
 // Params: none
 // Usage: op := redis.Master()
 // Redis: N/A (client-side helper)
-func (r *Redis) Master() *RedisOp {
+func (r *Redis) Master() RedisOperator {
 	return r.master
 }
 
-// Slave returns the slave RedisOp for read operations.
+// Slave returns the slave RedisOperator for read operations.
 // Params: none
 // Usage: op := redis.Slave()
 // Redis: N/A (client-side helper)
-func (r *Redis) Slave() *RedisOp {
+func (r *Redis) Slave() RedisOperator {
 	return r.slave
 }
 
@@ -984,6 +984,23 @@ func (k *RedisResponseEntity) GetBytes() []byte {
 	}
 
 	return nil
+}
+
+// GetFloat64 converts the underlying reply to float64 when possible.
+// Returns 0.0 if the value is not numeric or cannot be parsed.
+func (k *RedisResponseEntity) GetFloat64() float64 {
+	switch v := k.data.(type) {
+	case float64:
+		return v
+	case float32:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case int:
+		return float64(v)
+	}
+
+	return 0.0
 }
 
 // GetSlice converts an array reply into a slice of RedisResponseEntity for typed access.

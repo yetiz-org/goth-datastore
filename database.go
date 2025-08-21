@@ -2,12 +2,13 @@ package datastore
 
 import (
 	"fmt"
+	"sync"
+	"time"
+
 	kklogger "github.com/yetiz-org/goth-kklogger"
 	"github.com/yetiz-org/goth-secret"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm/logger"
-	"sync"
-	"time"
 
 	"gorm.io/gorm"
 )
@@ -29,15 +30,15 @@ var DefaultDatabaseMaxAllowedPacket = 25165824
 var DefaultDatabaseParseTime = true
 
 type Database struct {
-	writer *DatabaseOp
-	reader *DatabaseOp
+	writer DatabaseOperator
+	reader DatabaseOperator
 }
 
-func (k *Database) Writer() *DatabaseOp {
+func (k *Database) Writer() DatabaseOperator {
 	return k.writer
 }
 
-func (k *Database) Reader() *DatabaseOp {
+func (k *Database) Reader() DatabaseOperator {
 	return k.reader
 }
 
@@ -102,6 +103,51 @@ func (o *DatabaseOp) DB() *gorm.DB {
 
 func (o *DatabaseOp) Adapter() string {
 	return o.meta.Adapter
+}
+
+// GetConnParams returns the current connection parameters
+func (o *DatabaseOp) GetConnParams() ConnParams {
+	return o.ConnParams
+}
+
+// GetMysqlParams returns the current MySQL-specific parameters
+func (o *DatabaseOp) GetMysqlParams() MysqlParams {
+	return o.MysqlParams
+}
+
+// GetGORMParams returns the current GORM configuration
+func (o *DatabaseOp) GetGORMParams() gorm.Config {
+	return o.GORMParams
+}
+
+// GetLogger returns the current logger interface
+func (o *DatabaseOp) GetLogger() logger.Interface {
+	return o.Logger
+}
+
+// Meta returns the database metadata
+func (o *DatabaseOp) Meta() secret.DatabaseMeta {
+	return o.meta
+}
+
+// SetConnParams sets the connection parameters
+func (o *DatabaseOp) SetConnParams(params ConnParams) {
+	o.ConnParams = params
+}
+
+// SetMysqlParams sets the MySQL-specific parameters
+func (o *DatabaseOp) SetMysqlParams(params MysqlParams) {
+	o.MysqlParams = params
+}
+
+// SetGORMParams sets the GORM configuration
+func (o *DatabaseOp) SetGORMParams(config gorm.Config) {
+	o.GORMParams = config
+}
+
+// SetLogger sets the logger interface
+func (o *DatabaseOp) SetLogger(logger logger.Interface) {
+	o.Logger = logger
 }
 
 func NewDatabase(profileName string) *Database {
