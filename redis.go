@@ -998,6 +998,18 @@ func (k *RedisResponseEntity) GetFloat64() float64 {
 		return float64(v)
 	case int:
 		return float64(v)
+	case []byte:
+		if p, err := strconv.ParseFloat(string(v), 64); err == nil {
+			return p
+		}
+
+		return 0.0
+	case string:
+		if p, err := strconv.ParseFloat(v, 64); err == nil {
+			return p
+		}
+
+		return 0.0
 	}
 
 	return 0.0
