@@ -142,16 +142,15 @@ quick-test: docker-up ## Complete test lifecycle: Setup → Test → Cleanup aut
 	@echo "Setting up test configuration..."
 	@cp -r docker/config/* example/
 	@echo "Running comprehensive test suite..."
-	@set -e; \
+	@bash -c ' \
+	cleanup() { \
+		echo "Restoring original test configuration..."; \
+		git checkout -- example/ 2>/dev/null || true; \
+		echo "🛑 Stopping Docker services and cleaning up resources..."; \
+		docker compose down; \
+	}; \
+	trap cleanup EXIT; \
+	set -e; \
 	go test -v ./... -timeout 30m; \
-	TEST_RESULT=$$?; \
-	echo "Restoring original test configuration..."; \
-	git checkout -- example/ || true; \
-	echo "🛑 Stopping Docker services and cleaning up resources..."; \
-	docker compose down; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ Quick test completed successfully! All resources cleaned up."; \
-	else \
-		echo "❌ Tests failed but all resources cleaned up."; \
-		exit $$TEST_RESULT; \
-	fi
+	echo "✅ Quick test completed successfully! All resources will be cleaned up."; \
+	'
