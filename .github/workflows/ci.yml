@@ -1,0 +1,255 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  GO_VERSION: '1.23'
+
+jobs:
+  # Job 1: Code Quality and Linting
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Format check
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          echo "Code is not formatted properly. Please run 'go fmt ./...'"
+          gofmt -s -l .
+          exit 1
+        fi
+
+    - name: Vet
+      run: go vet ./...
+
+  # Job 2: Unit Tests (without external dependencies)
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run unit tests (mock only)
+      run: go test -v -short ./...
+
+  # Job 3: Integration Tests with Docker Services
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    strategy:
+      matrix:
+        test-group: [redis, database, cassandra]
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Start Docker services
+      run: |
+        echo "🚀 Starting Docker services for ${{ matrix.test-group }} tests..."
+        docker compose up -d
+        chmod +x docker/wait-for-services.sh
+
+    - name: Wait for services to be healthy
+      run: |
+        echo "⏳ Waiting for services to be healthy..."
+        timeout 300 ./docker/wait-for-services.sh
+        
+    - name: Setup test configuration for ${{ matrix.test-group }}
+      run: |
+        echo "⚙️ Setting up test configuration for ${{ matrix.test-group }}..."
+        cp docker/config/${{ matrix.test-group }}-test/secret.json example/${{ matrix.test-group }}-test/
+
+    - name: Run ${{ matrix.test-group }} tests
+      run: |
+        echo "🧪 Running ${{ matrix.test-group }} tests..."
+        case "${{ matrix.test-group }}" in
+          "redis")
+            go test -v -run TestRedis ./... -timeout 15m
+            ;;
+          "database")
+            go test -v -run TestDatabase ./... -timeout 15m
+            ;;
+          "cassandra")
+            go test -v -run TestCassandra ./... -timeout 15m
+            ;;
+        esac
+
+    - name: Show Docker logs on failure
+      if: failure()
+      run: |
+        echo "🐛 Tests failed. Showing Docker logs for debugging..."
+        docker compose logs
+
+    - name: Cleanup Docker services
+      if: always()
+      run: |
+        echo "🧹 Cleaning up Docker services..."
+        docker compose down -v
+        docker system prune -f
+
+  # Job 4: Full Integration Test (all services together)
+  full-integration:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Start all Docker services
+      run: |
+        echo "🚀 Starting all Docker services for full integration test..."
+        docker compose up -d
+        chmod +x docker/wait-for-services.sh
+
+    - name: Wait for all services to be healthy
+      run: |
+        echo "⏳ Waiting for all services to be healthy..."
+        timeout 600 ./docker/wait-for-services.sh
+
+    - name: Setup all test configurations
+      run: |
+        echo "⚙️ Setting up test configurations for Docker services..."
+        cp -r docker/config/* example/
+
+    - name: Run full test suite
+      run: |
+        echo "🧪 Running full test suite..."
+        go test -v ./... -timeout 30m
+
+    - name: Show Docker logs on failure
+      if: failure()
+      run: |
+        echo "🐛 Full integration tests failed. Showing Docker logs..."
+        docker compose logs
+
+    - name: Cleanup Docker services
+      if: always()
+      run: |
+        echo "🧹 Cleaning up Docker services..."
+        docker compose down -v
+        docker system prune -f
+
+  # Job 5: Build verification
+  build:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Build
+      run: go build -v ./...
+
+    - name: Check for unused dependencies
+      run: go mod tidy && git diff --exit-code go.mod go.sum

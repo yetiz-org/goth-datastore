@@ -1,0 +1,75 @@
+services:
+  # Redis Server
+  redis:
+    image: redis:7-alpine
+    container_name: goth-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 3s
+      interval: 5s
+      retries: 5
+    networks:
+      - goth-network
+
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: goth-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: test
+      MYSQL_USER: test
+      MYSQL_PASSWORD: test
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/init/mysql:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "test", "-ptest"]
+      timeout: 10s
+      interval: 10s
+      retries: 10
+    networks:
+      - goth-network
+
+  # Cassandra Database
+  cassandra:
+    image: cassandra:4.1
+    container_name: goth-cassandra
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: "Test Cluster"
+      CASSANDRA_DC: "datacenter1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_NUM_TOKENS: 128
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+      - ./docker/init/cassandra:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      timeout: 30s
+      interval: 30s
+      retries: 10
+      start_period: 60s
+    networks:
+      - goth-network
+
+volumes:
+  redis-data:
+    driver: local
+  mysql-data:
+    driver: local
+  cassandra-data:
+    driver: local
+
+networks:
+  goth-network:
+    driver: bridge
