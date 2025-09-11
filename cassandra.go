@@ -203,7 +203,10 @@ func (c *CassandraOp) configureCluster() {
 		Password: c.meta.Password,
 	}
 
-	c.cluster.SslOpts = &gocql.SslOptions{CaPath: c.meta.CaPath, EnableHostVerification: false}
+	if c.meta.CaPath != "" {
+		c.cluster.SslOpts = &gocql.SslOptions{CaPath: c.meta.CaPath, EnableHostVerification: false}
+	}
+
 	c.cluster.ProtoVersion = 3
 	c.cluster.Consistency = gocql.LocalQuorum
 	c.cluster.DisableInitialHostLookup = false
