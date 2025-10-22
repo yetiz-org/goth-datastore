@@ -1746,6 +1746,43 @@ func TestRedisHashCommands(t *testing.T) {
 		// 4 field * 2 = 8 elements (field-value for)
 		assert.Equal(t, 8, len(finalData))
 	})
+
+	t.Run("HSetNX_Set_Field_If_Not_Exists", func(t *testing.T) {
+		hashKey := "test_hsetnx"
+
+		// Clean
+		redis.Master().Delete(hashKey)
+
+		// HSetNX on non-existent field (should succeed)
+		hsetNXResp := redis.Master().HSetNX(hashKey, "field1", "value1")
+		assert.NoError(t, hsetNXResp.Error)
+		assert.Equal(t, int64(1), hsetNXResp.GetInt64()) // 1 means field was created
+
+		// Verify field was set
+		getResp := redis.Master().HGet(hashKey, "field1")
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "value1", getResp.GetString())
+
+		// HSetNX on existing field (should fail)
+		hsetNXResp2 := redis.Master().HSetNX(hashKey, "field1", "value2")
+		assert.NoError(t, hsetNXResp2.Error)
+		assert.Equal(t, int64(0), hsetNXResp2.GetInt64()) // 0 means field already exists
+
+		// Verify field was NOT changed
+		getResp2 := redis.Master().HGet(hashKey, "field1")
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, "value1", getResp2.GetString())
+
+		// HSetNX on different field in same hash (should succeed)
+		hsetNXResp3 := redis.Master().HSetNX(hashKey, "field2", "value2")
+		assert.NoError(t, hsetNXResp3.Error)
+		assert.Equal(t, int64(1), hsetNXResp3.GetInt64())
+
+		// Verify both fields exist
+		hlen := redis.Master().HLen(hashKey)
+		assert.NoError(t, hlen.Error)
+		assert.Equal(t, int64(2), hlen.GetInt64())
+	})
 }
 
 // TestRedisEval Script command tests
@@ -2228,6 +2265,319 @@ func TestRedisStringCommands(t *testing.T) {
 		assert.Contains(t, finalContent, "title：")
 		assert.Contains(t, finalContent, "Redis")
 		assert.Contains(t, finalContent, "testexample")
+	})
+
+	t.Run("SetNX_Set_If_Not_Exists", func(t *testing.T) {
+		key := "test_setnx"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SetNX on non-existent key (should succeed)
+		setNXResp := redis.Master().SetNX(key, "first_value")
+		assert.NoError(t, setNXResp.Error)
+		assert.Equal(t, int64(1), setNXResp.GetInt64()) // 1 means success
+
+		// Verify value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "first_value", getResp.GetString())
+
+		// SetNX on existing key (should fail)
+		setNXResp2 := redis.Master().SetNX(key, "second_value")
+		assert.NoError(t, setNXResp2.Error)
+		assert.Equal(t, int64(0), setNXResp2.GetInt64()) // 0 means key already exists
+
+		// Verify value was NOT changed
+		getResp2 := redis.Master().Get(key)
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, "first_value", getResp2.GetString())
+	})
+
+	t.Run("MSetNX_Multiple_Set_If_Not_Exists", func(t *testing.T) {
+		key1 := "test_msetnx_1"
+		key2 := "test_msetnx_2"
+		key3 := "test_msetnx_3"
+
+		// Clean
+		redis.Master().Delete(key1, key2, key3)
+
+		// MSetNX when all keys don't exist (should succeed)
+		msetNXResp := redis.Master().MSetNX(key1, "value1", key2, "value2", key3, "value3")
+		assert.NoError(t, msetNXResp.Error)
+		assert.Equal(t, int64(1), msetNXResp.GetInt64()) // 1 means all keys were set
+
+		// Verify all values were set
+		get1 := redis.Master().Get(key1)
+		assert.NoError(t, get1.Error)
+		assert.Equal(t, "value1", get1.GetString())
+
+		get2 := redis.Master().Get(key2)
+		assert.NoError(t, get2.Error)
+		assert.Equal(t, "value2", get2.GetString())
+
+		get3 := redis.Master().Get(key3)
+		assert.NoError(t, get3.Error)
+		assert.Equal(t, "value3", get3.GetString())
+
+		// MSetNX when at least one key exists (should fail for all)
+		key4 := "test_msetnx_4"
+		msetNXResp2 := redis.Master().MSetNX(key1, "new_value1", key4, "value4")
+		assert.NoError(t, msetNXResp2.Error)
+		assert.Equal(t, int64(0), msetNXResp2.GetInt64()) // 0 means no keys were set
+
+		// Verify key1 was NOT changed
+		get1Again := redis.Master().Get(key1)
+		assert.NoError(t, get1Again.Error)
+		assert.Equal(t, "value1", get1Again.GetString())
+
+		// Verify key4 was NOT created
+		get4 := redis.Master().Get(key4)
+		assert.True(t, get4.RecordNotFound())
+	})
+
+	t.Run("SetWithOptions_NX_Option", func(t *testing.T) {
+		key := "test_set_opts_nx"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with NX on non-existent key (should succeed)
+		setResp := redis.Master().SetWithOptions(key, "first_value", SetOptions{NX: true})
+		assert.NoError(t, setResp.Error)
+		assert.Equal(t, "OK", setResp.GetString())
+
+		// Verify value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "first_value", getResp.GetString())
+
+		// SET with NX on existing key (should fail)
+		setResp2 := redis.Master().SetWithOptions(key, "second_value", SetOptions{NX: true})
+		assert.True(t, setResp2.RecordNotFound()) // Redis returns nil when NX fails
+
+		// Verify value was NOT changed
+		getResp2 := redis.Master().Get(key)
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, "first_value", getResp2.GetString())
+	})
+
+	t.Run("SetWithOptions_XX_Option", func(t *testing.T) {
+		key := "test_set_opts_xx"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with XX on non-existent key (should fail)
+		setResp := redis.Master().SetWithOptions(key, "value", SetOptions{XX: true})
+		assert.True(t, setResp.RecordNotFound()) // Redis returns nil when XX fails
+
+		// Verify key was NOT created
+		getResp := redis.Master().Get(key)
+		assert.True(t, getResp.RecordNotFound())
+
+		// Create the key first
+		redis.Master().Set(key, "initial_value")
+
+		// SET with XX on existing key (should succeed)
+		setResp2 := redis.Master().SetWithOptions(key, "updated_value", SetOptions{XX: true})
+		assert.NoError(t, setResp2.Error)
+		assert.Equal(t, "OK", setResp2.GetString())
+
+		// Verify value was updated
+		getResp2 := redis.Master().Get(key)
+		assert.NoError(t, getResp2.Error)
+		assert.Equal(t, "updated_value", getResp2.GetString())
+	})
+
+	t.Run("SetWithOptions_GET_Option", func(t *testing.T) {
+		key := "test_set_opts_get"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with GET on non-existent key (should return nil)
+		setResp := redis.Master().SetWithOptions(key, "first_value", SetOptions{GET: true})
+		assert.True(t, setResp.RecordNotFound()) // No previous value
+
+		// SET with GET on existing key (should return old value)
+		setResp2 := redis.Master().SetWithOptions(key, "second_value", SetOptions{GET: true})
+		assert.NoError(t, setResp2.Error)
+		assert.Equal(t, "first_value", setResp2.GetString()) // Returns old value
+
+		// Verify new value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "second_value", getResp.GetString())
+	})
+
+	t.Run("SetWithOptions_EX_Option", func(t *testing.T) {
+		key := "test_set_opts_ex"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with EX (expire in seconds)
+		setResp := redis.Master().SetWithOptions(key, "value_with_ttl", SetOptions{EX: 10})
+		assert.NoError(t, setResp.Error)
+
+		// Verify value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "value_with_ttl", getResp.GetString())
+
+		// Verify TTL was set
+		ttlResp := redis.Master().TTL(key)
+		assert.NoError(t, ttlResp.Error)
+		ttl := ttlResp.GetInt64()
+		assert.True(t, ttl > 0 && ttl <= 10)
+	})
+
+	t.Run("SetWithOptions_PX_Option", func(t *testing.T) {
+		key := "test_set_opts_px"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with PX (expire in milliseconds)
+		setResp := redis.Master().SetWithOptions(key, "value_with_ttl_ms", SetOptions{PX: 5000})
+		assert.NoError(t, setResp.Error)
+
+		// Verify value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "value_with_ttl_ms", getResp.GetString())
+
+		// Verify TTL was set (check in milliseconds)
+		pttlResp := redis.Master().PTTL(key)
+		assert.NoError(t, pttlResp.Error)
+		pttl := pttlResp.GetInt64()
+		assert.True(t, pttl > 0 && pttl <= 5000)
+	})
+
+	t.Run("SetWithOptions_EXAT_Option", func(t *testing.T) {
+		key := "test_set_opts_exat"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with EXAT (expire at Unix timestamp in seconds)
+		futureTimestamp := time.Now().Unix() + 60 // 60 seconds from now
+		setResp := redis.Master().SetWithOptions(key, "value_exat", SetOptions{EXAT: futureTimestamp})
+		assert.NoError(t, setResp.Error)
+
+		// Verify value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "value_exat", getResp.GetString())
+
+		// Verify TTL was set
+		ttlResp := redis.Master().TTL(key)
+		assert.NoError(t, ttlResp.Error)
+		ttl := ttlResp.GetInt64()
+		assert.True(t, ttl > 50 && ttl <= 60)
+	})
+
+	t.Run("SetWithOptions_PXAT_Option", func(t *testing.T) {
+		key := "test_set_opts_pxat"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with PXAT (expire at Unix timestamp in milliseconds)
+		futureTimestampMs := time.Now().UnixMilli() + 60000 // 60 seconds from now
+		setResp := redis.Master().SetWithOptions(key, "value_pxat", SetOptions{PXAT: futureTimestampMs})
+		assert.NoError(t, setResp.Error)
+
+		// Verify value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "value_pxat", getResp.GetString())
+
+		// Verify TTL was set (more lenient range due to timing variations)
+		pttlResp := redis.Master().PTTL(key)
+		assert.NoError(t, pttlResp.Error)
+		pttl := pttlResp.GetInt64()
+		assert.True(t, pttl > 50000 && pttl <= 60100, "Expected PTTL between 50000-60100ms, got %d", pttl)
+	})
+
+	t.Run("SetWithOptions_KEEPTTL_Option", func(t *testing.T) {
+		key := "test_set_opts_keepttl"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// Set key with TTL first
+		redis.Master().SetExpire(key, "initial_value", 100)
+
+		// Get initial TTL
+		ttlResp1 := redis.Master().TTL(key)
+		assert.NoError(t, ttlResp1.Error)
+		initialTTL := ttlResp1.GetInt64()
+		assert.True(t, initialTTL > 0)
+
+		// Update value with KEEPTTL
+		setResp := redis.Master().SetWithOptions(key, "updated_value", SetOptions{KEEPTTL: true})
+		assert.NoError(t, setResp.Error)
+
+		// Verify value was updated
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "updated_value", getResp.GetString())
+
+		// Verify TTL was preserved
+		ttlResp2 := redis.Master().TTL(key)
+		assert.NoError(t, ttlResp2.Error)
+		preservedTTL := ttlResp2.GetInt64()
+		assert.True(t, preservedTTL > 0)
+		// TTL should be close to initial TTL (allowing small time difference)
+		assert.True(t, preservedTTL >= initialTTL-2 && preservedTTL <= initialTTL)
+	})
+
+	t.Run("SetWithOptions_Combined_NX_EX", func(t *testing.T) {
+		key := "test_set_opts_combined"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// SET with NX and EX combined
+		setResp := redis.Master().SetWithOptions(key, "value", SetOptions{NX: true, EX: 30})
+		assert.NoError(t, setResp.Error)
+		assert.Equal(t, "OK", setResp.GetString())
+
+		// Verify value and TTL
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "value", getResp.GetString())
+
+		ttlResp := redis.Master().TTL(key)
+		assert.NoError(t, ttlResp.Error)
+		ttl := ttlResp.GetInt64()
+		assert.True(t, ttl > 0 && ttl <= 30)
+
+		// Try to set again with NX (should fail)
+		setResp2 := redis.Master().SetWithOptions(key, "new_value", SetOptions{NX: true, EX: 30})
+		assert.True(t, setResp2.RecordNotFound())
+	})
+
+	t.Run("SetWithOptions_Combined_XX_GET", func(t *testing.T) {
+		key := "test_set_opts_xx_get"
+
+		// Clean
+		redis.Master().Delete(key)
+
+		// Set initial value
+		redis.Master().Set(key, "old_value")
+
+		// SET with XX and GET combined
+		setResp := redis.Master().SetWithOptions(key, "new_value", SetOptions{XX: true, GET: true})
+		assert.NoError(t, setResp.Error)
+		assert.Equal(t, "old_value", setResp.GetString()) // Returns old value
+
+		// Verify new value was set
+		getResp := redis.Master().Get(key)
+		assert.NoError(t, getResp.Error)
+		assert.Equal(t, "new_value", getResp.GetString())
 	})
 }
 

@@ -24,7 +24,10 @@ type RedisOperator interface {
 	// String operations
 	Get(key interface{}) *RedisResponse
 	Set(key interface{}, val interface{}) *RedisResponse
+	SetWithOptions(key interface{}, val interface{}, opts SetOptions) *RedisResponse
 	SetExpire(key interface{}, val interface{}, ttl int64) *RedisResponse
+	SetNX(key interface{}, val interface{}) *RedisResponse
+	MSetNX(keyvals ...interface{}) *RedisResponse
 	Incr(key interface{}) *RedisResponse
 	IncrBy(key interface{}, val int64) *RedisResponse
 	Decr(key interface{}) *RedisResponse
@@ -38,6 +41,7 @@ type RedisOperator interface {
 	HMSet(key interface{}, val map[interface{}]interface{}) *RedisResponse
 	HMGet(key interface{}, field ...interface{}) *RedisResponse
 	HSet(key, field, val interface{}) *RedisResponse
+	HSetNX(key, field, val interface{}) *RedisResponse
 	HGet(key, field interface{}) *RedisResponse
 	HExists(key, field interface{}) *RedisResponse
 	HDel(key interface{}, field ...interface{}) *RedisResponse

@@ -242,6 +242,61 @@ func (o *RedisOp) Set(key interface{}, val interface{}) *RedisResponse {
 	return o._Do("SET", key, val)
 }
 
+// SetOptions defines options for the SetWithOptions command.
+type SetOptions struct {
+	// NX - Only set the key if it does not already exist
+	NX bool
+	// XX - Only set the key if it already exists
+	XX bool
+	// GET - Return the old value stored at key
+	GET bool
+	// EX - Set expire time in seconds
+	EX int64
+	// PX - Set expire time in milliseconds
+	PX int64
+	// EXAT - Set expire time as Unix timestamp in seconds
+	EXAT int64
+	// PXAT - Set expire time as Unix timestamp in milliseconds
+	PXAT int64
+	// KEEPTTL - Retain the TTL associated with the key
+	KEEPTTL bool
+}
+
+// SetWithOptions sets the string value of a key with additional options.
+// Params: key - target key; val - value to set; opts - SetOptions struct
+// Usage: resp := redis.Master().SetWithOptions("k", "v", SetOptions{NX: true, EX: 60})
+// Redis: SET key value [NX|XX] [GET] [EX seconds|PX milliseconds|EXAT timestamp|PXAT timestamp|KEEPTTL]
+func (o *RedisOp) SetWithOptions(key interface{}, val interface{}, opts SetOptions) *RedisResponse {
+	args := []interface{}{key, val}
+
+	// Add condition options (mutually exclusive)
+	if opts.NX {
+		args = append(args, "NX")
+	} else if opts.XX {
+		args = append(args, "XX")
+	}
+
+	// Add GET option
+	if opts.GET {
+		args = append(args, "GET")
+	}
+
+	// Add expiration options (mutually exclusive)
+	if opts.EX > 0 {
+		args = append(args, "EX", opts.EX)
+	} else if opts.PX > 0 {
+		args = append(args, "PX", opts.PX)
+	} else if opts.EXAT > 0 {
+		args = append(args, "EXAT", opts.EXAT)
+	} else if opts.PXAT > 0 {
+		args = append(args, "PXAT", opts.PXAT)
+	} else if opts.KEEPTTL {
+		args = append(args, "KEEPTTL")
+	}
+
+	return o._Do("SET", args...)
+}
+
 // Expire sets a timeout on key. After the TTL expires, the key is deleted.
 // Params: key - target key; ttl - time to live in seconds
 // Usage: resp := redis.Master().Expire("k", 60)
@@ -282,6 +337,22 @@ func (o *RedisOp) SetExpire(key interface{}, val interface{}, ttl int64) *RedisR
 	return o._Do("SETEX", key, ttl, val)
 }
 
+// SetNX sets the value of a key, only if the key does not exist.
+// Params: key - target key; val - value to set
+// Usage: resp := redis.Master().SetNX("k", "v"); success := resp.GetInt64()
+// Redis: SETNX (deprecated, use SET with NX option for new code)
+func (o *RedisOp) SetNX(key interface{}, val interface{}) *RedisResponse {
+	return o._Do("SETNX", key, val)
+}
+
+// MSetNX sets multiple keys to multiple values, only if none of the keys exist.
+// Params: keyvals - alternating keys and values (k1, v1, k2, v2, ...)
+// Usage: resp := redis.Master().MSetNX("k1", "v1", "k2", "v2"); success := resp.GetInt64()
+// Redis: MSETNX
+func (o *RedisOp) MSetNX(keyvals ...interface{}) *RedisResponse {
+	return o._Do("MSETNX", keyvals...)
+}
+
 // HMSet sets multiple hash fields to multiple values.
 // Params: key - hash key; val - map of field->value pairs
 // Usage: resp := redis.Master().HMSet("h", map[interface{}]interface{}{"f":"v"})
@@ -314,6 +385,14 @@ func (o *RedisOp) HMGet(key interface{}, field ...interface{}) *RedisResponse {
 // Redis: HSET
 func (o *RedisOp) HSet(key, field, val interface{}) *RedisResponse {
 	return o._Do("HSET", key, field, val)
+}
+
+// HSetNX sets field in the hash stored at key to value, only if field does not exist.
+// Params: key - hash key; field - field name; val - value to set
+// Usage: resp := redis.Master().HSetNX("h", "f", "v"); success := resp.GetInt64()
+// Redis: HSETNX
+func (o *RedisOp) HSetNX(key, field, val interface{}) *RedisResponse {
+	return o._Do("HSETNX", key, field, val)
 }
 
 // HGet gets the value of a field in a hash.

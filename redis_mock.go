@@ -434,8 +434,47 @@ func (m *MockRedisOp) Set(key interface{}, val interface{}) *RedisResponse {
 	return m.mockDo("SET", key, val)
 }
 
+func (m *MockRedisOp) SetWithOptions(key interface{}, val interface{}, opts SetOptions) *RedisResponse {
+	args := []interface{}{key, val}
+
+	// Add condition options (mutually exclusive)
+	if opts.NX {
+		args = append(args, "NX")
+	} else if opts.XX {
+		args = append(args, "XX")
+	}
+
+	// Add GET option
+	if opts.GET {
+		args = append(args, "GET")
+	}
+
+	// Add expiration options (mutually exclusive)
+	if opts.EX > 0 {
+		args = append(args, "EX", opts.EX)
+	} else if opts.PX > 0 {
+		args = append(args, "PX", opts.PX)
+	} else if opts.EXAT > 0 {
+		args = append(args, "EXAT", opts.EXAT)
+	} else if opts.PXAT > 0 {
+		args = append(args, "PXAT", opts.PXAT)
+	} else if opts.KEEPTTL {
+		args = append(args, "KEEPTTL")
+	}
+
+	return m.mockDo("SET", args...)
+}
+
 func (m *MockRedisOp) SetExpire(key interface{}, val interface{}, ttl int64) *RedisResponse {
 	return m.mockDo("SETEX", key, ttl, val)
+}
+
+func (m *MockRedisOp) SetNX(key interface{}, val interface{}) *RedisResponse {
+	return m.mockDo("SETNX", key, val)
+}
+
+func (m *MockRedisOp) MSetNX(keyvals ...interface{}) *RedisResponse {
+	return m.mockDo("MSETNX", keyvals...)
 }
 
 func (m *MockRedisOp) Incr(key interface{}) *RedisResponse {
@@ -487,6 +526,10 @@ func (m *MockRedisOp) HMGet(key interface{}, field ...interface{}) *RedisRespons
 
 func (m *MockRedisOp) HSet(key, field, val interface{}) *RedisResponse {
 	return m.mockDo("HSET", key, field, val)
+}
+
+func (m *MockRedisOp) HSetNX(key, field, val interface{}) *RedisResponse {
+	return m.mockDo("HSETNX", key, field, val)
 }
 
 func (m *MockRedisOp) HGet(key, field interface{}) *RedisResponse {
