@@ -56,7 +56,7 @@ jobs:
     
     strategy:
       matrix:
-        test-group: [redis, database, cassandra]
+        test-group: [redis, database, database-postgres, cassandra]
       fail-fast: false
 
     services:
@@ -83,6 +83,20 @@ jobs:
           --health-cmd "mysqladmin ping"
           --health-interval 10s
           --health-timeout 5s
+          --health-retries 10
+
+      postgres:
+        image: postgres:18-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        options: >-
+          --health-cmd "pg_isready -U test -d test -h localhost"
+          --health-interval 10s
+          --health-timeout 10s
           --health-retries 10
 
       cassandra:
@@ -132,6 +146,8 @@ jobs:
         nc -z 127.0.0.1 3306 && echo "✅ MySQL accessible" || echo "❌ MySQL not accessible"
         # Test Cassandra
         nc -z 127.0.0.1 9042 && echo "✅ Cassandra accessible" || echo "❌ Cassandra not accessible"
+        # Test PostgreSQL
+        nc -z 127.0.0.1 5432 && echo "✅ PostgreSQL accessible" || echo "❌ PostgreSQL not accessible"
 
     - name: Setup test configuration for ${{ matrix.test-group }}
       run: |
@@ -148,7 +164,10 @@ jobs:
             go test -v -run TestRedis ./... -timeout 10m
             ;;
           "database")
-            go test -v -run TestDatabase ./... -timeout 10m
+            go test -v -run TestDatabaseMySQLCRUD ./... -timeout 10m
+            ;;
+          "database-postgres")
+            go test -v -run TestDatabasePostgresCRUD ./... -timeout 10m
             ;;
           "cassandra")
             go test -v -run TestCassandra ./... -timeout 15m

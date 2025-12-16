@@ -2,12 +2,14 @@ package datastore
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	kklogger "github.com/yetiz-org/goth-kklogger"
 	"github.com/yetiz-org/goth-secret"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm/logger"
 
 	"gorm.io/gorm"
@@ -28,6 +30,9 @@ var DefaultDatabaseClientFoundRows = false
 var DefaultDatabaseLoc = "Local"
 var DefaultDatabaseMaxAllowedPacket = 25165824
 var DefaultDatabaseParseTime = true
+
+var DefaultDatabasePostgresSSLMode = "disable"
+var DefaultDatabasePostgresTimeZone = "Local"
 
 type Database struct {
 	writer DatabaseOperator
@@ -82,6 +87,8 @@ type ConnParams struct {
 	MaxIdleConn      int
 	ConnMaxLifetime  int
 	ConnMaxIdleTime  int
+	SSLMode          string
+	TimeZone         string
 }
 
 func (o *DatabaseOp) DB() *gorm.DB {
@@ -174,6 +181,8 @@ func NewDatabase(profileName string) *Database {
 				MaxIdleConn:      DefaultDatabaseMaxIdleConn,
 				ConnMaxLifetime:  DefaultDatabaseConnMaxLifetime,
 				ConnMaxIdleTime:  DefaultDatabaseConnMaxIdleTime,
+				SSLMode:          DefaultDatabasePostgresSSLMode,
+				TimeZone:         DefaultDatabasePostgresTimeZone,
 			},
 			meta: profile.Writer,
 		}
@@ -195,6 +204,8 @@ func NewDatabase(profileName string) *Database {
 				MaxIdleConn:      DefaultDatabaseMaxIdleConn,
 				ConnMaxLifetime:  DefaultDatabaseConnMaxLifetime,
 				ConnMaxIdleTime:  DefaultDatabaseConnMaxIdleTime,
+				SSLMode:          DefaultDatabasePostgresSSLMode,
+				TimeZone:         DefaultDatabasePostgresTimeZone,
 			},
 			meta: profile.Reader,
 		}
@@ -261,6 +272,31 @@ func newDBPool(op *DatabaseOp, retry int) *gorm.DB {
 			DontSupportNullAsDefaultValue: op.MysqlParams.DontSupportNullAsDefaultValue,
 			DontSupportRenameColumnUnique: op.MysqlParams.DontSupportRenameColumnUnique,
 			DontSupportDropConstraint:     op.MysqlParams.DontSupportDropConstraint,
+		}), &op.GORMParams)
+	case "postgres", "postgresql":
+		sslMode := op.ConnParams.SSLMode
+		if sslMode == "" {
+			sslMode = DefaultDatabasePostgresSSLMode
+		}
+		timeZone := op.ConnParams.TimeZone
+		if timeZone == "" {
+			timeZone = DefaultDatabasePostgresTimeZone
+		}
+		if strings.EqualFold(timeZone, "local") {
+			timeZone = "UTC"
+		}
+
+		db, err = gorm.Open(postgres.New(postgres.Config{
+			DSN: fmt.Sprintf(
+				"host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
+				op.meta.Params.Host,
+				op.meta.Params.Username,
+				op.meta.Params.Password,
+				op.meta.Params.DBName,
+				op.meta.Params.Port,
+				sslMode,
+				timeZone,
+			),
 		}), &op.GORMParams)
 	default:
 		kklogger.ErrorJ("datastore:Database.newDBPool", "database adapter not support")

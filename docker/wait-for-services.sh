@@ -103,6 +103,38 @@ test_mysql_connection() {
     return 1
 }
 
+test_postgres_connection() {
+    echo "🔍 Testing PostgreSQL connection from host..."
+    local max_attempts=30
+    local attempt=0
+
+    while [ $attempt -lt $max_attempts ]; do
+        # Test from within container first
+        if docker compose exec -T postgres pg_isready -U test -d test -h localhost > /dev/null 2>&1; then
+            echo "✅ PostgreSQL internal connection successful"
+
+            # Test from host
+            if command -v nc >/dev/null 2>&1; then
+                if nc -z 127.0.0.1 5432; then
+                    echo "✅ PostgreSQL host port accessible"
+                    return 0
+                fi
+            fi
+
+            # If we can't test from host, assume internal success is enough
+            echo "✅ PostgreSQL connection successful (internal test passed)"
+            return 0
+        fi
+
+        attempt=$((attempt + 1))
+        echo "   PostgreSQL connection attempt $attempt/$max_attempts..."
+        sleep 2
+    done
+
+    echo "❌ PostgreSQL connection failed after $max_attempts attempts"
+    return 1
+}
+
 test_cassandra_connection() {
     echo "🔍 Testing Cassandra connection from host..."
     local max_attempts=60  # Cassandra needs more time
@@ -142,6 +174,7 @@ main() {
     # Wait for services to be healthy
     wait_for_service "redis" 20
     wait_for_service "mysql" 40
+    wait_for_service "postgres" 40
     wait_for_service "cassandra" 60  # Cassandra takes longer to start
     
     echo ""
@@ -150,6 +183,7 @@ main() {
     # Test actual connectivity
     test_redis_connection
     test_mysql_connection
+    test_postgres_connection
     test_cassandra_connection
     
     echo ""

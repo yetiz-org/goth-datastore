@@ -16,6 +16,15 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+type databaseCRUDRecord struct {
+	ID   uint `gorm:"primaryKey"`
+	Name string
+}
+
+func (databaseCRUDRecord) TableName() string {
+	return "goth_datastore_database_crud_records"
+}
+
 // MockSecret is a mock implementation for secret.Database
 type MockSecret struct {
 	mock.Mock
@@ -482,6 +491,169 @@ func TestLoadDatabaseExampleSecret(t *testing.T) {
 		assert.Equal(t, "mysql", database.writer.Meta().Adapter)
 		assert.Equal(t, "mysql", database.reader.Meta().Adapter)
 	})
+}
+
+// TestLoadDatabasePostgresExampleSecret tests loading PostgreSQL Database secret from example file
+func TestLoadDatabasePostgresExampleSecret(t *testing.T) {
+	// Save original secret path and restore it after test
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	// Set secret path to the example directory which has the correct structure
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+
+	// Test loading the secret
+	t.Run("LoadDatabasePostgresSecret", func(t *testing.T) {
+		profile := &secret.Database{}
+		err := secret.Load("database", "postgres-test", profile)
+		assert.NoError(t, err)
+
+		// Verify writer configuration
+		assert.NotNil(t, profile.Writer)
+		assert.Equal(t, "postgres", profile.Writer.Adapter)
+		assert.Equal(t, "utf8", profile.Writer.Params.Charset)
+		assert.Equal(t, "localhost", profile.Writer.Params.Host)
+		assert.Equal(t, uint(5432), profile.Writer.Params.Port)
+		assert.Equal(t, "test", profile.Writer.Params.DBName)
+		assert.Equal(t, "test", profile.Writer.Params.Username)
+		assert.Equal(t, "test", profile.Writer.Params.Password)
+
+		// Verify reader configuration
+		assert.NotNil(t, profile.Reader)
+		assert.Equal(t, "postgres", profile.Reader.Adapter)
+		assert.Equal(t, "utf8", profile.Reader.Params.Charset)
+		assert.Equal(t, "localhost", profile.Reader.Params.Host)
+		assert.Equal(t, uint(5432), profile.Reader.Params.Port)
+		assert.Equal(t, "test", profile.Reader.Params.DBName)
+		assert.Equal(t, "test", profile.Reader.Params.Username)
+		assert.Equal(t, "test", profile.Reader.Params.Password)
+	})
+
+	t.Run("NewDatabaseWithPostgresExampleSecret", func(t *testing.T) {
+		// Test creating Database instance with the example secret
+		database := NewDatabase("postgres-test")
+
+		// NewDatabase should succeed with valid secret
+		assert.NotNil(t, database)
+		assert.NotNil(t, database.writer)
+		assert.NotNil(t, database.reader)
+
+		// Verify the adapter type
+		assert.Equal(t, "postgres", database.writer.Meta().Adapter)
+		assert.Equal(t, "postgres", database.reader.Meta().Adapter)
+	})
+}
+
+func TestDatabaseMySQLCRUD(t *testing.T) {
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+
+	database := NewDatabase("test")
+	if database == nil || database.Writer() == nil {
+		t.Skip("database not configured")
+	}
+
+	db := database.Writer().DB()
+	if db == nil {
+		t.Skip("database connection not available")
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Skipf("database sql DB not available: %v", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Skipf("database ping failed: %v", err)
+	}
+
+	_ = db.Migrator().DropTable(&databaseCRUDRecord{})
+	defer func() {
+		_ = db.Migrator().DropTable(&databaseCRUDRecord{})
+	}()
+
+	err = db.AutoMigrate(&databaseCRUDRecord{})
+	assert.NoError(t, err)
+	assert.True(t, db.Migrator().HasTable(&databaseCRUDRecord{}))
+
+	rec := &databaseCRUDRecord{Name: "mysql"}
+	err = db.Create(rec).Error
+	assert.NoError(t, err)
+	assert.NotZero(t, rec.ID)
+
+	err = db.Delete(&databaseCRUDRecord{}, rec.ID).Error
+	assert.NoError(t, err)
+
+	var cnt int64
+	err = db.Model(&databaseCRUDRecord{}).Where("id = ?", rec.ID).Count(&cnt).Error
+	assert.NoError(t, err)
+	assert.Equal(t, int64(0), cnt)
+
+	err = db.Migrator().DropTable(&databaseCRUDRecord{})
+	assert.NoError(t, err)
+	assert.False(t, db.Migrator().HasTable(&databaseCRUDRecord{}))
+}
+
+func TestDatabasePostgresCRUD(t *testing.T) {
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+
+	database := NewDatabase("postgres-test")
+	if database == nil || database.Writer() == nil {
+		t.Skip("database not configured")
+	}
+
+	db := database.Writer().DB()
+	if db == nil {
+		t.Skip("database connection not available")
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Skipf("database sql DB not available: %v", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Skipf("database ping failed: %v", err)
+	}
+
+	_ = db.Migrator().DropTable(&databaseCRUDRecord{})
+	defer func() {
+		_ = db.Migrator().DropTable(&databaseCRUDRecord{})
+	}()
+
+	err = db.AutoMigrate(&databaseCRUDRecord{})
+	assert.NoError(t, err)
+	assert.True(t, db.Migrator().HasTable(&databaseCRUDRecord{}))
+
+	rec := &databaseCRUDRecord{Name: "postgres"}
+	err = db.Create(rec).Error
+	assert.NoError(t, err)
+	assert.NotZero(t, rec.ID)
+
+	err = db.Delete(&databaseCRUDRecord{}, rec.ID).Error
+	assert.NoError(t, err)
+
+	var cnt int64
+	err = db.Model(&databaseCRUDRecord{}).Where("id = ?", rec.ID).Count(&cnt).Error
+	assert.NoError(t, err)
+	tassert := assert.New(t)
+	tassert.Equal(int64(0), cnt)
+
+	err = db.Migrator().DropTable(&databaseCRUDRecord{})
+	assert.NoError(t, err)
+	assert.False(t, db.Migrator().HasTable(&databaseCRUDRecord{}))
 }
 
 // TestMockDatabaseOp tests the mock Database operator functionality

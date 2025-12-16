@@ -226,7 +226,6 @@ func TestMockCassandraOp(t *testing.T) {
 
 		// Test max retry attempts
 		mock.SetMaxRetryAttempt(5)
-		// Note: GetMaxRetryAttempt is not exposed in interface, but the value is set internally
 	})
 
 	t.Run("Session response simulation", func(t *testing.T) {

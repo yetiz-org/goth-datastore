@@ -1,7 +1,7 @@
 # Makefile for goth-datastore Docker testing environment
 # Provides convenient commands for local development and testing
 
-.PHONY: help docker-up docker-down docker-logs docker-clean test-docker test-local build docker-status wait-for-services
+.PHONY: help docker-up docker-down docker-logs docker-clean test-docker test-local build docker-status wait-for-services test-database-postgres
 
 # Default target
 help: ## Show this help message
@@ -78,7 +78,7 @@ test-database: docker-up ## Run only Database tests in Docker environment with a
 	@echo "🧪 Running Database tests in Docker environment..."
 	@cp docker/config/database-test/secret.json example/database-test/
 	@set -e; \
-	go test -v -run TestDatabase ./... -timeout 10m; \
+	go test -v -run TestDatabaseMySQLCRUD ./... -timeout 10m; \
 	TEST_RESULT=$$?; \
 	git checkout -- example/database-test/secret.json || true; \
 	echo "🛑 Stopping Docker services..."; \
@@ -87,6 +87,22 @@ test-database: docker-up ## Run only Database tests in Docker environment with a
 		echo "✅ Database tests passed and Docker services stopped"; \
 	else \
 		echo "❌ Database tests failed but Docker services stopped"; \
+		exit $$TEST_RESULT; \
+	fi
+
+test-database-postgres: docker-up ## Run only PostgreSQL Database tests in Docker environment with automatic cleanup
+	@echo "🧪 Running PostgreSQL Database tests in Docker environment..."
+	@cp docker/config/database-postgres-test/secret.json example/database-postgres-test/
+	@set -e; \
+	go test -v -run TestDatabasePostgresCRUD ./... -timeout 10m; \
+	TEST_RESULT=$$?; \
+	git checkout -- example/database-postgres-test/secret.json 2>/dev/null || true; \
+	echo "🛑 Stopping Docker services..."; \
+	docker compose down; \
+	if [ $$TEST_RESULT -eq 0 ]; then \
+		echo "✅ PostgreSQL Database tests passed and Docker services stopped"; \
+	else \
+		echo "❌ PostgreSQL Database tests failed but Docker services stopped"; \
 		exit $$TEST_RESULT; \
 	fi
 
