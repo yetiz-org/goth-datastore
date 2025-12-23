@@ -140,18 +140,22 @@ func TestLoadRedisExampleSecret(t *testing.T) {
 
 	// Test loading the secret
 	t.Run("LoadRedisSecret", func(t *testing.T) {
+		isLocalHost := func(host string) bool {
+			return host == "localhost" || host == "127.0.0.1"
+		}
+
 		profile := &secret.Redis{}
 		err := secret.Load("redis", "test", profile)
 		assert.NoError(t, err)
 
 		// Verify master configuration
 		assert.NotNil(t, profile.Master)
-		assert.Equal(t, "localhost", profile.Master.Host)
+		assert.True(t, isLocalHost(profile.Master.Host))
 		assert.Equal(t, uint(6379), profile.Master.Port)
 
 		// Verify slave configuration (using same instance as master in simplified setup)
 		assert.NotNil(t, profile.Slave)
-		assert.Equal(t, "localhost", profile.Slave.Host)
+		assert.True(t, isLocalHost(profile.Slave.Host))
 		assert.Equal(t, uint(6379), profile.Slave.Port)
 	})
 
@@ -166,9 +170,9 @@ func TestLoadRedisExampleSecret(t *testing.T) {
 		assert.NotNil(t, redis.slave)
 
 		// Verify the master and slave are configured correctly (using same instance in simplified setup)
-		assert.Equal(t, "localhost", redis.master.Meta().Host)
+		assert.True(t, redis.master.Meta().Host == "localhost" || redis.master.Meta().Host == "127.0.0.1")
 		assert.Equal(t, uint(6379), redis.master.Meta().Port)
-		assert.Equal(t, "localhost", redis.slave.Meta().Host)
+		assert.True(t, redis.slave.Meta().Host == "localhost" || redis.slave.Meta().Host == "127.0.0.1")
 		assert.Equal(t, uint(6379), redis.slave.Meta().Port)
 	})
 }

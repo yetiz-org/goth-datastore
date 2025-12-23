@@ -61,6 +61,7 @@ func NewMockDatabaseOp() *MockDatabaseOp {
 			Loc:              "Local",
 			ClientFoundRows:  false,
 			ParseTime:        true,
+			MultiStatements:  false,
 			MaxAllowedPacket: 25165824,
 			MaxOpenConn:      4,
 			MaxIdleConn:      2,

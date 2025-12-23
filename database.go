@@ -30,6 +30,7 @@ var DefaultDatabaseClientFoundRows = false
 var DefaultDatabaseLoc = "Local"
 var DefaultDatabaseMaxAllowedPacket = 25165824
 var DefaultDatabaseParseTime = true
+var DefaultDatabaseMultiStatements = false
 
 var DefaultDatabasePostgresSSLMode = "disable"
 var DefaultDatabasePostgresTimeZone = "Local"
@@ -82,6 +83,7 @@ type ConnParams struct {
 	Loc              string
 	ClientFoundRows  bool
 	ParseTime        bool
+	MultiStatements  bool
 	MaxAllowedPacket int
 	MaxOpenConn      int
 	MaxIdleConn      int
@@ -176,6 +178,7 @@ func NewDatabase(profileName string) *Database {
 				Loc:              DefaultDatabaseLoc,
 				ClientFoundRows:  DefaultDatabaseClientFoundRows,
 				ParseTime:        DefaultDatabaseParseTime,
+				MultiStatements:  DefaultDatabaseMultiStatements,
 				MaxAllowedPacket: DefaultDatabaseMaxAllowedPacket,
 				MaxOpenConn:      DefaultDatabaseMaxOpenConn,
 				MaxIdleConn:      DefaultDatabaseMaxIdleConn,
@@ -199,6 +202,7 @@ func NewDatabase(profileName string) *Database {
 				Loc:              DefaultDatabaseLoc,
 				ClientFoundRows:  DefaultDatabaseClientFoundRows,
 				ParseTime:        DefaultDatabaseParseTime,
+				MultiStatements:  DefaultDatabaseMultiStatements,
 				MaxAllowedPacket: DefaultDatabaseMaxAllowedPacket,
 				MaxOpenConn:      DefaultDatabaseMaxOpenConn,
 				MaxIdleConn:      DefaultDatabaseMaxIdleConn,
@@ -212,6 +216,64 @@ func NewDatabase(profileName string) *Database {
 	}
 
 	return database
+}
+
+func buildMysqlDSN(username, password, host string, port uint, dbName, charset string, params ConnParams) string {
+	return fmt.Sprintf("%s:%s@(%s:%d)/%s?"+
+		"charset=%s"+
+		"&timeout=%s"+
+		"&readTimeout=%s"+
+		"&writeTimeout=%s"+
+		"&collation=%s"+
+		"&loc=%s"+
+		"&clientFoundRows=%v"+
+		"&parseTime=%v"+
+		"&maxAllowedPacket=%d"+
+		"&multiStatements=%v",
+		username,
+		password,
+		host,
+		port,
+		dbName,
+		charset,
+		params.Timeout,
+		params.ReadTimeout,
+		params.WriteTimeout,
+		params.Collation,
+		params.Loc,
+		params.ClientFoundRows,
+		params.ParseTime,
+		params.MaxAllowedPacket,
+		params.MultiStatements,
+	)
+}
+
+func buildPostgresDSN(host, username, password, dbName string, port uint, sslMode, timeZone string) string {
+	return fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
+		host,
+		username,
+		password,
+		dbName,
+		port,
+		sslMode,
+		timeZone,
+	)
+}
+
+func buildPostgresDialectorConfig(meta secret.DatabaseMeta, params ConnParams, sslMode, timeZone string) postgres.Config {
+	return postgres.Config{
+		DSN: buildPostgresDSN(
+			meta.Params.Host,
+			meta.Params.Username,
+			meta.Params.Password,
+			meta.Params.DBName,
+			meta.Params.Port,
+			sslMode,
+			timeZone,
+		),
+		PreferSimpleProtocol: params.MultiStatements,
+	}
 }
 
 func newDBPool(op *DatabaseOp, retry int) *gorm.DB {
@@ -234,30 +296,14 @@ func newDBPool(op *DatabaseOp, retry int) *gorm.DB {
 	switch op.meta.Adapter {
 	case "mysql":
 		db, err = gorm.Open(mysql.New(mysql.Config{
-			DSN: fmt.Sprintf("%s:%s@(%s:%d)/%s?"+
-				"charset=%s"+
-				"&timeout=%s"+
-				"&readTimeout=%s"+
-				"&writeTimeout=%s"+
-				"&collation=%s"+
-				"&loc=%s"+
-				"&clientFoundRows=%v"+
-				"&parseTime=%v"+
-				"&maxAllowedPacket=%d",
+			DSN: buildMysqlDSN(
 				op.meta.Params.Username,
 				op.meta.Params.Password,
 				op.meta.Params.Host,
 				op.meta.Params.Port,
 				op.meta.Params.DBName,
 				charset,
-				op.ConnParams.Timeout,
-				op.ConnParams.ReadTimeout,
-				op.ConnParams.WriteTimeout,
-				op.ConnParams.Collation,
-				op.ConnParams.Loc,
-				op.ConnParams.ClientFoundRows,
-				op.ConnParams.ParseTime,
-				op.ConnParams.MaxAllowedPacket,
+				op.ConnParams,
 			),
 			DriverName:                    op.MysqlParams.DriverName,
 			ServerVersion:                 op.MysqlParams.ServerVersion,
@@ -286,18 +332,7 @@ func newDBPool(op *DatabaseOp, retry int) *gorm.DB {
 			timeZone = "UTC"
 		}
 
-		db, err = gorm.Open(postgres.New(postgres.Config{
-			DSN: fmt.Sprintf(
-				"host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
-				op.meta.Params.Host,
-				op.meta.Params.Username,
-				op.meta.Params.Password,
-				op.meta.Params.DBName,
-				op.meta.Params.Port,
-				sslMode,
-				timeZone,
-			),
-		}), &op.GORMParams)
+		db, err = gorm.Open(postgres.New(buildPostgresDialectorConfig(op.meta, op.ConnParams, sslMode, timeZone)), &op.GORMParams)
 	default:
 		kklogger.ErrorJ("datastore:Database.newDBPool", "database adapter not support")
 		return nil

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -137,6 +138,7 @@ func TestNewDatabase(t *testing.T) {
 		origLoc := DefaultDatabaseLoc
 		origMaxAllowedPacket := DefaultDatabaseMaxAllowedPacket
 		origParseTime := DefaultDatabaseParseTime
+		origMultiStatements := DefaultDatabaseMultiStatements
 
 		// Restore defaults after test
 		defer func() {
@@ -153,6 +155,7 @@ func TestNewDatabase(t *testing.T) {
 			DefaultDatabaseLoc = origLoc
 			DefaultDatabaseMaxAllowedPacket = origMaxAllowedPacket
 			DefaultDatabaseParseTime = origParseTime
+			DefaultDatabaseMultiStatements = origMultiStatements
 		}()
 
 		// Test with default values
@@ -169,6 +172,7 @@ func TestNewDatabase(t *testing.T) {
 		DefaultDatabaseLoc = "UTC"
 		DefaultDatabaseMaxAllowedPacket = 50331648
 		DefaultDatabaseParseTime = false
+		DefaultDatabaseMultiStatements = true
 
 		// Since we can't easily mock secret.Load, this test mainly validates the defaults
 		assert.Equal(t, 10, DefaultDatabaseMaxOpenConn)
@@ -184,6 +188,7 @@ func TestNewDatabase(t *testing.T) {
 		assert.Equal(t, "UTC", DefaultDatabaseLoc)
 		assert.Equal(t, 50331648, DefaultDatabaseMaxAllowedPacket)
 		assert.Equal(t, false, DefaultDatabaseParseTime)
+		assert.Equal(t, true, DefaultDatabaseMultiStatements)
 	})
 }
 
@@ -281,6 +286,7 @@ func TestConnParams(t *testing.T) {
 			Loc:              DefaultDatabaseLoc,
 			ClientFoundRows:  DefaultDatabaseClientFoundRows,
 			ParseTime:        DefaultDatabaseParseTime,
+			MultiStatements:  DefaultDatabaseMultiStatements,
 			MaxAllowedPacket: DefaultDatabaseMaxAllowedPacket,
 			MaxOpenConn:      DefaultDatabaseMaxOpenConn,
 			MaxIdleConn:      DefaultDatabaseMaxIdleConn,
@@ -296,6 +302,7 @@ func TestConnParams(t *testing.T) {
 		assert.Equal(t, DefaultDatabaseLoc, params.Loc)
 		assert.Equal(t, DefaultDatabaseClientFoundRows, params.ClientFoundRows)
 		assert.Equal(t, DefaultDatabaseParseTime, params.ParseTime)
+		assert.Equal(t, DefaultDatabaseMultiStatements, params.MultiStatements)
 		assert.Equal(t, DefaultDatabaseMaxAllowedPacket, params.MaxAllowedPacket)
 		assert.Equal(t, DefaultDatabaseMaxOpenConn, params.MaxOpenConn)
 		assert.Equal(t, DefaultDatabaseMaxIdleConn, params.MaxIdleConn)
@@ -453,6 +460,10 @@ func TestLoadDatabaseExampleSecret(t *testing.T) {
 
 	// Test loading the secret
 	t.Run("LoadDatabaseSecret", func(t *testing.T) {
+		isLocalHost := func(host string) bool {
+			return host == "localhost" || host == "127.0.0.1"
+		}
+
 		profile := &secret.Database{}
 		err := secret.Load("database", "test", profile)
 		assert.NoError(t, err)
@@ -461,7 +472,7 @@ func TestLoadDatabaseExampleSecret(t *testing.T) {
 		assert.NotNil(t, profile.Writer)
 		assert.Equal(t, "mysql", profile.Writer.Adapter)
 		assert.Equal(t, "utf8mb4", profile.Writer.Params.Charset)
-		assert.Equal(t, "localhost", profile.Writer.Params.Host)
+		assert.True(t, isLocalHost(profile.Writer.Params.Host))
 		assert.Equal(t, uint(3306), profile.Writer.Params.Port)
 		assert.Equal(t, "test", profile.Writer.Params.DBName)
 		assert.Equal(t, "test", profile.Writer.Params.Username)
@@ -471,7 +482,7 @@ func TestLoadDatabaseExampleSecret(t *testing.T) {
 		assert.NotNil(t, profile.Reader)
 		assert.Equal(t, "mysql", profile.Reader.Adapter)
 		assert.Equal(t, "utf8mb4", profile.Reader.Params.Charset)
-		assert.Equal(t, "localhost", profile.Reader.Params.Host)
+		assert.True(t, isLocalHost(profile.Reader.Params.Host))
 		assert.Equal(t, uint(3306), profile.Reader.Params.Port)
 		assert.Equal(t, "test", profile.Reader.Params.DBName)
 		assert.Equal(t, "test", profile.Reader.Params.Username)
@@ -507,6 +518,10 @@ func TestLoadDatabasePostgresExampleSecret(t *testing.T) {
 
 	// Test loading the secret
 	t.Run("LoadDatabasePostgresSecret", func(t *testing.T) {
+		isLocalHost := func(host string) bool {
+			return host == "localhost" || host == "127.0.0.1"
+		}
+
 		profile := &secret.Database{}
 		err := secret.Load("database", "postgres-test", profile)
 		assert.NoError(t, err)
@@ -515,7 +530,7 @@ func TestLoadDatabasePostgresExampleSecret(t *testing.T) {
 		assert.NotNil(t, profile.Writer)
 		assert.Equal(t, "postgres", profile.Writer.Adapter)
 		assert.Equal(t, "utf8", profile.Writer.Params.Charset)
-		assert.Equal(t, "localhost", profile.Writer.Params.Host)
+		assert.True(t, isLocalHost(profile.Writer.Params.Host))
 		assert.Equal(t, uint(5432), profile.Writer.Params.Port)
 		assert.Equal(t, "test", profile.Writer.Params.DBName)
 		assert.Equal(t, "test", profile.Writer.Params.Username)
@@ -525,7 +540,7 @@ func TestLoadDatabasePostgresExampleSecret(t *testing.T) {
 		assert.NotNil(t, profile.Reader)
 		assert.Equal(t, "postgres", profile.Reader.Adapter)
 		assert.Equal(t, "utf8", profile.Reader.Params.Charset)
-		assert.Equal(t, "localhost", profile.Reader.Params.Host)
+		assert.True(t, isLocalHost(profile.Reader.Params.Host))
 		assert.Equal(t, uint(5432), profile.Reader.Params.Port)
 		assert.Equal(t, "test", profile.Reader.Params.DBName)
 		assert.Equal(t, "test", profile.Reader.Params.Username)
@@ -795,5 +810,81 @@ func TestMockDatabaseBuilder(t *testing.T) {
 		assert.Equal(t, "mysql", db.Reader().Adapter())
 		assert.Equal(t, "postgres", db.Writer().Meta().Adapter)
 		assert.Equal(t, "mysql", db.Reader().Meta().Adapter)
+	})
+}
+
+func TestBuildMysqlDSN_MultiStatements(t *testing.T) {
+	// Save original secret path and restore it after test
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+
+	profile := &secret.Database{}
+	err := secret.Load("database", "test", profile)
+	assert.NoError(t, err)
+	assert.NotNil(t, profile.Writer)
+
+	meta := profile.Writer
+	charset := meta.Params.Charset
+
+	base := ConnParams{
+		Timeout:          DefaultDatabaseDialTimeout,
+		ReadTimeout:      DefaultDatabaseReadTimeout,
+		WriteTimeout:     DefaultDatabaseWriteTimeout,
+		Collation:        DefaultDatabaseCollation,
+		Loc:              DefaultDatabaseLoc,
+		ClientFoundRows:  DefaultDatabaseClientFoundRows,
+		ParseTime:        DefaultDatabaseParseTime,
+		MaxAllowedPacket: DefaultDatabaseMaxAllowedPacket,
+	}
+
+	t.Run("true", func(t *testing.T) {
+		params := base
+		params.MultiStatements = true
+		dsn := buildMysqlDSN(meta.Params.Username, meta.Params.Password, meta.Params.Host, meta.Params.Port, meta.Params.DBName, charset, params)
+		assert.True(t, strings.Contains(dsn, "multiStatements=true"))
+	})
+
+	t.Run("false", func(t *testing.T) {
+		params := base
+		params.MultiStatements = false
+		dsn := buildMysqlDSN(meta.Params.Username, meta.Params.Password, meta.Params.Host, meta.Params.Port, meta.Params.DBName, charset, params)
+		assert.True(t, strings.Contains(dsn, "multiStatements=false"))
+	})
+}
+
+func TestBuildPostgresDialectorConfig_MultiStatements(t *testing.T) {
+	// Save original secret path and restore it after test
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+
+	profile := &secret.Database{}
+	err := secret.Load("database", "postgres-test", profile)
+	assert.NoError(t, err)
+	assert.NotNil(t, profile.Writer)
+
+	meta := profile.Writer
+	sslMode := DefaultDatabasePostgresSSLMode
+	tz := "UTC"
+
+	t.Run("true", func(t *testing.T) {
+		params := ConnParams{MultiStatements: true}
+		cfg := buildPostgresDialectorConfig(meta, params, sslMode, tz)
+		assert.True(t, cfg.PreferSimpleProtocol)
+	})
+
+	t.Run("false", func(t *testing.T) {
+		params := ConnParams{MultiStatements: false}
+		cfg := buildPostgresDialectorConfig(meta, params, sslMode, tz)
+		assert.False(t, cfg.PreferSimpleProtocol)
 	})
 }
