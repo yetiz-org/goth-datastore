@@ -1,4 +1,4 @@
-package secret
+package secrets
 
 type Cassandra struct {
 	DefaultSecret
