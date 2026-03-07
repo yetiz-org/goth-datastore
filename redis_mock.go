@@ -5,8 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gomodule/redigo/redis"
-	secret "github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 )
 
 // MockCallRecord represents a single Redis command call record for testing verification.
@@ -305,37 +304,6 @@ func (m *MockRedisOp) Meta() secret.RedisMeta {
 	return m.meta
 }
 
-func (m *MockRedisOp) Pool() *redis.Pool {
-	// Mock implementation: create a basic mock pool
-	return &redis.Pool{
-		MaxIdle:         m.idleCount,
-		MaxActive:       m.activeCount,
-		IdleTimeout:     240 * time.Second,
-		MaxConnLifetime: 1 * time.Hour,
-		Wait:            true,
-		Dial: func() (redis.Conn, error) {
-			return m.Conn(), nil
-		},
-	}
-}
-
-func (m *MockRedisOp) Conn() redis.Conn {
-	// Mock implementation: return a mock connection that implements redis.Conn interface
-	return &MockRedisConn{}
-}
-
-// MockRedisConn implements redis.Conn interface for testing
-type MockRedisConn struct{}
-
-func (c *MockRedisConn) Close() error { return nil }
-func (c *MockRedisConn) Err() error   { return nil }
-func (c *MockRedisConn) Do(commandName string, args ...interface{}) (reply interface{}, err error) {
-	return "OK", nil
-}
-func (c *MockRedisConn) Send(commandName string, args ...interface{}) error { return nil }
-func (c *MockRedisConn) Flush() error                                       { return nil }
-func (c *MockRedisConn) Receive() (reply interface{}, err error)            { return "OK", nil }
-
 func (m *MockRedisOp) ActiveCount() int {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
@@ -349,17 +317,14 @@ func (m *MockRedisOp) IdleCount() int {
 }
 
 func (m *MockRedisOp) Close() error {
-	// Mock implementation: nothing to close
-	return nil
-}
-
-func (m *MockRedisOp) Exec(f func(conn redis.Conn)) error {
-	// Mock implementation: call function with nil connection
-	f(nil)
 	return nil
 }
 
 // Pipeline operations
+func (m *MockRedisOp) Do(cmd string, args ...interface{}) *RedisResponse {
+	return m.mockDo(cmd, args...)
+}
+
 func (m *MockRedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
 	timestamp := time.Now()
 

@@ -1,7 +1,9 @@
 # Makefile for goth-datastore Docker testing environment
 # Provides convenient commands for local development and testing
 
-.PHONY: help docker-up docker-down docker-logs docker-clean test-docker test-local build docker-status wait-for-services test-database-postgres
+.PHONY: help docker-up docker-down docker-logs docker-clean docker-status wait-for-services redis-cluster-init test test-local test-redis test-database test-database-postgres test-cassandra test-redis-cluster build fmt lint deps ci
+
+COMPOSE_NETWORK := $(notdir $(CURDIR))_goth-network
 
 # Default target
 help: ## Show this help message
@@ -11,19 +13,23 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # Docker environment management
-docker-up: ## Start all Docker services (Redis, MySQL, Cassandra)
+docker-up: ## Start all Docker services and wait until ready
 	@echo "🚀 Starting Docker services..."
+	@docker rm -f goth-redis-cluster-17000 goth-redis-cluster-17001 goth-redis-cluster-17002 2>/dev/null || true
 	docker compose up -d
 	@echo "⏳ Waiting for services to be healthy..."
 	@./docker/wait-for-services.sh
+	@$(MAKE) redis-cluster-init
 
 docker-down: ## Stop and remove Docker containers
 	@echo "🛑 Stopping Docker services..."
 	docker compose down
+	@docker rm -f goth-redis-cluster-17000 goth-redis-cluster-17001 goth-redis-cluster-17002 2>/dev/null || true
 
 docker-clean: ## Stop containers and remove volumes (clean slate)
 	@echo "🧹 Cleaning up Docker environment..."
 	docker compose down -v --remove-orphans
+	@docker rm -f goth-redis-cluster-17000 goth-redis-cluster-17001 goth-redis-cluster-17002 2>/dev/null || true
 	docker system prune -f
 
 docker-logs: ## Show logs from all Docker services
@@ -34,95 +40,39 @@ docker-status: ## Show status of Docker services
 	@echo "📊 Docker services status:"
 	docker compose ps
 
-# Testing commands
-test-docker: docker-up ## Run tests in Docker environment with automatic cleanup
-	@echo "🧪 Running tests in Docker environment..."
-	@echo "Setting up test configuration for Docker services..."
-	@cp -r docker/config/* example/
-	@echo "Running Go tests..."
-	@set -e; \
-	go test -v ./... -timeout 30m; \
-	TEST_RESULT=$$?; \
-	echo "Restoring original test configuration..."; \
-	git checkout -- example/ || true; \
-	echo "🛑 Stopping Docker services..."; \
-	docker compose down; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ Tests passed and Docker services stopped"; \
-	else \
-		echo "❌ Tests failed but Docker services stopped"; \
-		exit $$TEST_RESULT; \
-	fi
+redis-cluster-init: ## Create Redis cluster if it is not initialized yet
+	@docker compose exec -T redis-cluster-17000 redis-cli -p 17000 cluster info 2>/dev/null | grep -q 'cluster_state:ok' || \
+		docker compose exec -T redis-cluster-17000 redis-cli --cluster create redis-cluster-17000:17000 redis-cluster-17001:17001 redis-cluster-17002:17002 --cluster-replicas 0 --cluster-yes
+
+test: docker-up ## Run full Go test suite and Redis cluster integration
+	@echo "🧪 Running full Go test suite..."
+	go test -v ./... -timeout 30m
+	@$(MAKE) test-redis-cluster
 
 test-local: ## Run tests with local services (assumes services are already running)
 	@echo "🧪 Running tests with local configuration..."
 	go test -v ./... -timeout 30m
 
-test-redis: docker-up ## Run only Redis tests in Docker environment with automatic cleanup
-	@echo "🧪 Running Redis tests in Docker environment..."
-	@cp docker/config/redis-test/secret.json example/redis-test/
-	@set -e; \
-	go test -v -run TestRedis ./... -timeout 10m; \
-	TEST_RESULT=$$?; \
-	git checkout -- example/redis-test/secret.json || true; \
-	echo "🛑 Stopping Docker services..."; \
-	docker compose down; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ Redis tests passed and Docker services stopped"; \
-	else \
-		echo "❌ Redis tests failed but Docker services stopped"; \
-		exit $$TEST_RESULT; \
-	fi
+test-redis: docker-up ## Run Redis tests
+	@echo "🧪 Running Redis tests..."
+	go test -v -run TestRedis ./... -timeout 10m
 
-test-database: docker-up ## Run only Database tests in Docker environment with automatic cleanup
-	@echo "🧪 Running Database tests in Docker environment..."
-	@cp docker/config/database-test/secret.json example/database-test/
-	@set -e; \
-	go test -v -run TestDatabaseMySQLCRUD ./... -timeout 10m; \
-	TEST_RESULT=$$?; \
-	git checkout -- example/database-test/secret.json || true; \
-	echo "🛑 Stopping Docker services..."; \
-	docker compose down; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ Database tests passed and Docker services stopped"; \
-	else \
-		echo "❌ Database tests failed but Docker services stopped"; \
-		exit $$TEST_RESULT; \
-	fi
+test-database: docker-up ## Run MySQL database tests
+	@echo "🧪 Running MySQL database tests..."
+	go test -v -run TestDatabaseMySQLCRUD ./... -timeout 10m
 
-test-database-postgres: docker-up ## Run only PostgreSQL Database tests in Docker environment with automatic cleanup
-	@echo "🧪 Running PostgreSQL Database tests in Docker environment..."
-	@cp docker/config/database-postgres-test/secret.json example/database-postgres-test/
-	@set -e; \
-	go test -v -run TestDatabasePostgresCRUD ./... -timeout 10m; \
-	TEST_RESULT=$$?; \
-	git checkout -- example/database-postgres-test/secret.json 2>/dev/null || true; \
-	echo "🛑 Stopping Docker services..."; \
-	docker compose down; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ PostgreSQL Database tests passed and Docker services stopped"; \
-	else \
-		echo "❌ PostgreSQL Database tests failed but Docker services stopped"; \
-		exit $$TEST_RESULT; \
-	fi
+test-database-postgres: docker-up ## Run PostgreSQL database tests
+	@echo "🧪 Running PostgreSQL database tests..."
+	go test -v -run TestDatabasePostgresCRUD ./... -timeout 10m
 
-test-cassandra: docker-up ## Run only Cassandra tests in Docker environment with automatic cleanup
-	@echo "🧪 Running Cassandra tests in Docker environment..."
-	@cp docker/config/cassandra-test/secret.json example/cassandra-test/
-	@set -e; \
-	go test -v -run TestCassandra ./... -timeout 10m; \
-	TEST_RESULT=$$?; \
-	git checkout -- example/cassandra-test/secret.json || true; \
-	echo "🛑 Stopping Docker services..."; \
-	docker compose down; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ Cassandra tests passed and Docker services stopped"; \
-	else \
-		echo "❌ Cassandra tests failed but Docker services stopped"; \
-		exit $$TEST_RESULT; \
-	fi
+test-cassandra: docker-up ## Run Cassandra tests
+	@echo "🧪 Running Cassandra tests..."
+	go test -v -run TestCassandra ./... -timeout 10m
 
-# Build and development commands
+test-redis-cluster: ## Run Redis cluster integration test in Docker network
+	@echo "🧪 Running Redis cluster integration test..."
+	docker run --rm --network $(COMPOSE_NETWORK) -v $(CURDIR):/workspace -w /workspace -e TEST_REDIS_CLUSTER_ADDRS=redis-cluster-17000:17000,redis-cluster-17001:17001,redis-cluster-17002:17002 golang:1.24.4 sh -lc "/usr/local/go/bin/go test ./... -run TestRedisClusterIntegration -count=1"
+
 build: ## Build the Go application
 	@echo "🔨 Building Go application..."
 	go build -v ./...
@@ -135,7 +85,6 @@ lint: ## Run golangci-lint (requires golangci-lint to be installed)
 	@echo "🔍 Running linter..."
 	golangci-lint run
 
-# Utility commands
 wait-for-services: ## Wait for all services to be healthy
 	@./docker/wait-for-services.sh
 
@@ -144,29 +93,5 @@ deps: ## Download Go dependencies
 	go mod download
 	go mod tidy
 
-# CI/CD simulation
-ci: docker-clean build test-docker ## Simulate CI/CD pipeline locally
+ci: docker-clean build test ## Simulate CI/CD pipeline locally
 	@echo "✅ Local CI/CD pipeline completed successfully!"
-
-# Quick development cycle (test-docker already includes cleanup)
-dev: docker-up wait-for-services test-docker ## Quick development cycle: up + wait + test + cleanup
-	@echo "🎉 Development cycle completed with full cleanup!"
-
-# Simple one-command test start with complete lifecycle management
-quick-test: docker-up ## Complete test lifecycle: Setup → Test → Cleanup automatically
-	@echo "🚀 Quick Test: Starting Docker environment and running all tests..."
-	@echo "Setting up test configuration..."
-	@cp -r docker/config/* example/
-	@echo "Running comprehensive test suite..."
-	@bash -c ' \
-	cleanup() { \
-		echo "Restoring original test configuration..."; \
-		git checkout -- example/ 2>/dev/null || true; \
-		echo "🛑 Stopping Docker services and cleaning up resources..."; \
-		docker compose down; \
-	}; \
-	trap cleanup EXIT; \
-	set -e; \
-	go test -v ./... -timeout 30m; \
-	echo "✅ Quick test completed successfully! All resources will be cleaned up."; \
-	'

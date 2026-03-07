@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
-	secret "github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 )
 
 func TestRedisResponseEntity(t *testing.T) {
@@ -78,8 +78,7 @@ func TestRedisResponseEntity(t *testing.T) {
 }
 
 func TestRedisPool(t *testing.T) {
-	t.Run("newRedisPool", func(t *testing.T) {
-		// Save original defaults
+	t.Run("newRedisClient", func(t *testing.T) {
 		origDialTimeout := DefaultRedisDialTimeout
 		origMaxIdle := DefaultRedisMaxIdle
 		origIdleTimeout := DefaultRedisIdleTimeout
@@ -87,7 +86,6 @@ func TestRedisPool(t *testing.T) {
 		origMaxActive := DefaultRedisMaxActive
 		origWait := DefaultRedisWait
 
-		// Restore defaults after test
 		defer func() {
 			DefaultRedisDialTimeout = origDialTimeout
 			DefaultRedisMaxIdle = origMaxIdle
@@ -97,7 +95,6 @@ func TestRedisPool(t *testing.T) {
 			DefaultRedisWait = origWait
 		}()
 
-		// Set test values
 		DefaultRedisDialTimeout = 500
 		DefaultRedisMaxIdle = 10
 		DefaultRedisIdleTimeout = 30000
@@ -105,24 +102,18 @@ func TestRedisPool(t *testing.T) {
 		DefaultRedisMaxActive = 100
 		DefaultRedisWait = true
 
-		// Create test meta
-		meta := secret.RedisMeta{
-			Host: "localhost",
-			Port: 6379,
+		profile := &secret.Redis{
+			Mode: secret.RedisModeSingle,
+			Master: secret.RedisMeta{
+				Host: "localhost",
+				Port: 6379,
+			},
 		}
+		profile.Normalize()
 
-		// Create pool
-		pool := newRedisPool(meta)
-
-		// Assert pool configuration
-		assert.Equal(t, DefaultRedisMaxActive, pool.MaxActive)
-		assert.Equal(t, DefaultRedisMaxIdle, pool.MaxIdle)
-		assert.Equal(t, time.Duration(DefaultRedisIdleTimeout)*time.Millisecond, pool.IdleTimeout)
-		assert.Equal(t, time.Duration(DefaultRedisMaxConnLifetime)*time.Millisecond, pool.MaxConnLifetime)
-		assert.Equal(t, DefaultRedisWait, pool.Wait)
-
-		// Close pool
-		pool.Close()
+		client := newRedisClient(profile, profile.MasterAddrs(), false)
+		assert.NotNil(t, client)
+		assert.NoError(t, client.Close())
 	})
 }
 
@@ -3024,10 +3015,25 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 		assert.Equal(t, "test_value", getResp.GetString())
 
 		// Test interface methods work
-		assert.NotNil(t, master.Pool())
 		assert.NotNil(t, master.Meta())
 		assert.GreaterOrEqual(t, master.ActiveCount(), 0)
 		assert.GreaterOrEqual(t, master.IdleCount(), 0)
+	})
+
+	t.Run("Direct_Command_API_Works_With_Mock", func(t *testing.T) {
+		mockRedis := NewMockRedis()
+		masterMock := mockRedis.Master().(*MockRedisOp)
+
+		masterMock.SetResponse("PING", "", "PONG", nil)
+
+		resp := mockRedis.Master().Do("PING")
+		assert.NoError(t, resp.Error)
+		assert.Equal(t, "PONG", resp.GetString())
+
+		history := masterMock.GetCallHistory()
+		if assert.NotEmpty(t, history) {
+			assert.Equal(t, "PING", history[len(history)-1].Command)
+		}
 	})
 
 	t.Run("Real_Redis_Interface_Still_Works", func(t *testing.T) {
@@ -3055,7 +3061,6 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 		assert.NotNil(t, slave)
 
 		// Test that the interface methods exist and don't panic
-		assert.NotNil(t, master.Pool())
 		assert.NotNil(t, master.Meta())
 		assert.GreaterOrEqual(t, master.ActiveCount(), 0)
 		assert.GreaterOrEqual(t, master.IdleCount(), 0)
@@ -3063,6 +3068,35 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 		// The actual Redis operations would require a real Redis server
 		// So we just verify the interface methods are accessible
 	})
+}
+
+func TestRedisDirectCommandIntegration(t *testing.T) {
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	wd, _ := os.Getwd()
+	secret.PATH = filepath.Join(wd, "example")
+
+	realRedis := NewRedis("test")
+	if !assert.NotNil(t, realRedis) {
+		return
+	}
+
+	pingResp := realRedis.Master().Do("PING")
+	assert.NoError(t, pingResp.Error)
+	assert.Equal(t, "PONG", pingResp.GetString())
+
+	setResp := realRedis.Master().Do("SET", "do_integration_key", "do_integration_value")
+	assert.NoError(t, setResp.Error)
+	assert.Equal(t, "OK", strings.ToUpper(setResp.GetString()))
+
+	getResp := realRedis.Master().Do("GET", "do_integration_key")
+	assert.NoError(t, getResp.Error)
+	assert.Equal(t, "do_integration_value", getResp.GetString())
+
+	realRedis.Master().Delete("do_integration_key")
 }
 
 func TestMockRedisConnectionAndPool(t *testing.T) {
@@ -3078,18 +3112,7 @@ func TestMockRedisConnectionAndPool(t *testing.T) {
 		assert.Equal(t, "mock", meta.Host)
 		assert.Equal(t, uint(6379), meta.Port)
 
-		// Test connection methods don't panic
-		assert.NotNil(t, mock.Pool())
-		assert.NotNil(t, mock.Conn())
 		assert.NoError(t, mock.Close())
-
-		// Test Exec method
-		var executed bool
-		err := mock.Exec(func(conn redis.Conn) {
-			executed = true
-		})
-		assert.NoError(t, err)
-		assert.True(t, executed)
 	})
 }
 
@@ -3743,4 +3766,242 @@ func BenchmarkRedisOperations(b *testing.B) {
 			}
 		})
 	})
+}
+
+func TestLoadRedisProfileLegacyAndCluster(t *testing.T) {
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	t.Run("legacy_single_profile", func(t *testing.T) {
+		wd, _ := os.Getwd()
+		secret.PATH = filepath.Join(wd, "example")
+
+		profile, err := secret.LoadRedisProfile("test")
+		assert.NoError(t, err)
+		assert.Equal(t, redisModeSingle, profile.Mode)
+		assert.Equal(t, []string{"127.0.0.1:6379"}, profile.MasterAddrs())
+		assert.Equal(t, []string{"127.0.0.1:6379"}, profile.SlaveAddrs())
+	})
+
+	t.Run("cluster_profile", func(t *testing.T) {
+		tempDir := t.TempDir()
+		secretDir := filepath.Join(tempDir, "redis-cluster")
+		assert.NoError(t, os.MkdirAll(secretDir, 0o755))
+		assert.NoError(t, os.WriteFile(filepath.Join(secretDir, "secret.json"), []byte(`{
+  "mode": "cluster",
+  "cluster": {
+    "addrs": ["127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002"],
+    "read_only": true
+  }
+}`), 0o644))
+		secret.PATH = tempDir
+
+		profile, err := secret.LoadRedisProfile("cluster")
+		assert.NoError(t, err)
+		assert.Equal(t, redisModeCluster, profile.Mode)
+		assert.Equal(t, []string{"127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002"}, profile.MasterAddrs())
+		assert.Equal(t, []string{"127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002"}, profile.SlaveAddrs())
+		assert.True(t, profile.Cluster.ReadOnly)
+	})
+
+	t.Run("replication_profile", func(t *testing.T) {
+		tempDir := t.TempDir()
+		secretDir := filepath.Join(tempDir, "redis-replication")
+		assert.NoError(t, os.MkdirAll(secretDir, 0o755))
+		assert.NoError(t, os.WriteFile(filepath.Join(secretDir, "secret.json"), []byte(`{
+  "mode": "replication",
+  "master": {
+    "host": "127.0.0.1",
+    "port": 6379
+  },
+  "slave": {
+    "host": "127.0.0.1",
+    "port": 6380
+  }
+}`), 0o644))
+		secret.PATH = tempDir
+
+		profile, err := secret.LoadRedisProfile("replication")
+		assert.NoError(t, err)
+		assert.Equal(t, redisModeReplication, profile.Mode)
+		assert.Equal(t, []string{"127.0.0.1:6379"}, profile.MasterAddrs())
+		assert.Equal(t, []string{"127.0.0.1:6380"}, profile.SlaveAddrs())
+	})
+
+	t.Run("infer_replication_from_legacy_master_slave", func(t *testing.T) {
+		tempDir := t.TempDir()
+		secretDir := filepath.Join(tempDir, "redis-legacy-replication")
+		assert.NoError(t, os.MkdirAll(secretDir, 0o755))
+		assert.NoError(t, os.WriteFile(filepath.Join(secretDir, "secret.json"), []byte(`{
+  "master": {
+    "host": "127.0.0.1",
+    "port": 6379
+  },
+  "slave": {
+    "host": "127.0.0.1",
+    "port": 6380
+  }
+}`), 0o644))
+		secret.PATH = tempDir
+
+		profile, err := secret.LoadRedisProfile("legacy-replication")
+		assert.NoError(t, err)
+		assert.Equal(t, redisModeReplication, profile.Mode)
+		assert.Equal(t, []string{"127.0.0.1:6379"}, profile.MasterAddrs())
+		assert.Equal(t, []string{"127.0.0.1:6380"}, profile.SlaveAddrs())
+	})
+}
+
+func TestNewRedisSupportsSingleAndClusterProfiles(t *testing.T) {
+	originalPath := secret.PATH
+	defer func() {
+		secret.PATH = originalPath
+	}()
+
+	t.Run("single_profile", func(t *testing.T) {
+		wd, _ := os.Getwd()
+		secret.PATH = filepath.Join(wd, "example")
+
+		r := NewRedis("test")
+		assert.NotNil(t, r)
+		assert.NotNil(t, r.Master())
+		assert.NotNil(t, r.Slave())
+		assert.Equal(t, "127.0.0.1", r.Master().Meta().Host)
+		assert.Equal(t, uint(6379), r.Master().Meta().Port)
+	})
+
+	t.Run("cluster_profile", func(t *testing.T) {
+		tempDir := t.TempDir()
+		secretDir := filepath.Join(tempDir, "redis-cluster")
+		assert.NoError(t, os.MkdirAll(secretDir, 0o755))
+		assert.NoError(t, os.WriteFile(filepath.Join(secretDir, "secret.json"), []byte(`{
+  "mode": "cluster",
+  "cluster": {
+    "addrs": ["127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002"]
+  }
+}`), 0o644))
+		secret.PATH = tempDir
+
+		r := NewRedis("cluster")
+		assert.NotNil(t, r)
+		assert.NotNil(t, r.Master())
+		assert.NotNil(t, r.Slave())
+		assert.Equal(t, "127.0.0.1", r.Master().Meta().Host)
+		assert.Equal(t, uint(7000), r.Master().Meta().Port)
+	})
+
+	t.Run("replication_profile", func(t *testing.T) {
+		tempDir := t.TempDir()
+		secretDir := filepath.Join(tempDir, "redis-replication")
+		assert.NoError(t, os.MkdirAll(secretDir, 0o755))
+		assert.NoError(t, os.WriteFile(filepath.Join(secretDir, "secret.json"), []byte(`{
+  "mode": "replication",
+  "master": {
+    "host": "127.0.0.1",
+    "port": 6379
+  },
+  "slave": {
+    "host": "127.0.0.1",
+    "port": 6380
+  }
+}`), 0o644))
+		secret.PATH = tempDir
+
+		r := NewRedis("replication")
+		assert.NotNil(t, r)
+		assert.NotNil(t, r.Master())
+		assert.NotNil(t, r.Slave())
+		assert.Equal(t, "127.0.0.1", r.Master().Meta().Host)
+		assert.Equal(t, uint(6379), r.Master().Meta().Port)
+		assert.Equal(t, "127.0.0.1", r.Slave().Meta().Host)
+		assert.Equal(t, uint(6380), r.Slave().Meta().Port)
+	})
+
+	t.Run("profile_struct", func(t *testing.T) {
+		profile := &secret.Redis{
+			Master: secret.RedisMeta{
+				Host: "127.0.0.1",
+				Port: 6379,
+			},
+			Slave: secret.RedisMeta{
+				Host: "127.0.0.1",
+				Port: 6380,
+			},
+		}
+
+		r := NewRedisWithProfile("inline", profile)
+		assert.NotNil(t, r)
+		assert.NotNil(t, r.Master())
+		assert.NotNil(t, r.Slave())
+		assert.Equal(t, "127.0.0.1", r.Master().Meta().Host)
+		assert.Equal(t, uint(6379), r.Master().Meta().Port)
+		assert.Equal(t, "127.0.0.1", r.Slave().Meta().Host)
+		assert.Equal(t, uint(6380), r.Slave().Meta().Port)
+		assert.Equal(t, redisModeReplication, profile.Mode)
+	})
+}
+
+func TestRedisClusterIntegration(t *testing.T) {
+	addrsEnv := strings.TrimSpace(os.Getenv("TEST_REDIS_CLUSTER_ADDRS"))
+	if addrsEnv == "" {
+		t.Skip("TEST_REDIS_CLUSTER_ADDRS is not set")
+	}
+
+	oldPath := secret.PATH
+	defer func() {
+		secret.PATH = oldPath
+	}()
+
+	tempDir := t.TempDir()
+	secretDir := filepath.Join(tempDir, "redis-cluster")
+	assert.NoError(t, os.MkdirAll(secretDir, 0o755))
+	assert.NoError(t, os.WriteFile(filepath.Join(secretDir, "secret.json"), []byte(`{
+  "mode": "cluster",
+  "cluster": {
+    "addrs": ["`+strings.Join(strings.Split(addrsEnv, ","), `", "`)+`"],
+    "read_only": false
+  }
+}`), 0o644))
+	secret.PATH = tempDir
+
+	r := NewRedis("cluster")
+	if !assert.NotNil(t, r) {
+		return
+	}
+	if !assert.NotNil(t, r.Master()) {
+		return
+	}
+	if !assert.NotNil(t, r.Slave()) {
+		return
+	}
+
+	setResp := r.Master().Set("cluster:test:key", "cluster-ok")
+	if !assert.NoError(t, setResp.Error) {
+		return
+	}
+	assert.Equal(t, "OK", setResp.GetString())
+
+	getResp := r.Master().Get("cluster:test:key")
+	if !assert.NoError(t, getResp.Error) {
+		return
+	}
+	assert.Equal(t, "cluster-ok", getResp.GetString())
+
+	pipeResp := r.Master().Pipeline(
+		RedisPipelineCmd{Cmd: "SET", Args: []interface{}{"cluster:test:pipeline{slot}", "v1"}},
+		RedisPipelineCmd{Cmd: "GET", Args: []interface{}{"cluster:test:pipeline{slot}"}},
+	)
+	if !assert.Len(t, pipeResp, 2) {
+		return
+	}
+	if !assert.NoError(t, pipeResp[0].Error) {
+		return
+	}
+	assert.Equal(t, "OK", pipeResp[0].GetString())
+	if !assert.NoError(t, pipeResp[1].Error) {
+		return
+	}
+	assert.Equal(t, "v1", pipeResp[1].GetString())
 }

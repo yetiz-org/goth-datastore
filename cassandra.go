@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 	"github.com/yetiz-org/goth-kklogger"
-	secret "github.com/yetiz-org/goth-secret"
 )
 
 // Cassandra represents a Cassandra database connection with separate read and write operations.

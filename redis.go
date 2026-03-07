@@ -4,14 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
-	"sync"
 	"time"
 
-	secret "github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
+	kklogger "github.com/yetiz-org/goth-kklogger"
 
-	"github.com/gomodule/redigo/redis"
-	"github.com/yetiz-org/goth-kklogger"
+	redis "github.com/redis/go-redis/v9"
 )
 
 // DefaultRedisDialTimeout is the dial timeout in milliseconds used when creating new Redis connections.
@@ -32,6 +32,12 @@ var DefaultRedisMaxActive = 0
 // DefaultRedisWait controls whether Get() waits for a connection when the pool is exhausted.
 var DefaultRedisWait = false
 
+const (
+	redisModeSingle      = secret.RedisModeSingle
+	redisModeReplication = secret.RedisModeReplication
+	redisModeCluster     = secret.RedisModeCluster
+)
+
 // Redis provides convenient accessors to master and slave Redis operations using a connection pool.
 // It is constructed via NewRedis and exposes Master() and Slave() for executing commands.
 // This type holds no business logic; it wires secret-loaded endpoints to pools.
@@ -39,6 +45,32 @@ type Redis struct {
 	name   string
 	master RedisOperator
 	slave  RedisOperator
+}
+
+func redisMetaFromAddrs(addrs []string) secret.RedisMeta {
+	if len(addrs) == 0 {
+		return secret.RedisMeta{}
+	}
+
+	host, port := splitRedisAddr(addrs[0])
+	return secret.RedisMeta{
+		Host: host,
+		Port: port,
+	}
+}
+
+func splitRedisAddr(addr string) (string, uint) {
+	host, portText, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr, 0
+	}
+
+	portValue, err := strconv.ParseUint(portText, 10, 64)
+	if err != nil {
+		return host, 0
+	}
+
+	return host, uint(portValue)
 }
 
 // Master returns the master RedisOperator for primary/write operations.
@@ -56,8 +88,7 @@ func (r *Redis) Slave() RedisOperator {
 // Each method executes a single Redis command and returns a RedisResponse.
 type RedisOp struct {
 	meta   secret.RedisMeta
-	pool   *redis.Pool
-	opLock sync.Mutex
+	client redis.UniversalClient
 }
 
 // Meta returns the Redis connection metadata (host and port) loaded from secret.
@@ -65,32 +96,36 @@ func (o *RedisOp) Meta() secret.RedisMeta {
 	return o.meta
 }
 
-// Pool returns the underlying redis.Pool used by this RedisOp.
-func (o *RedisOp) Pool() *redis.Pool {
-	return o.pool
-}
-
-// Conn returns a raw redis.Conn from the pool. Caller must Close() when done.
-func (o *RedisOp) Conn() redis.Conn {
-	return o.pool.Get()
-}
-
 // ActiveCount returns the number of active connections in the pool.
 func (o *RedisOp) ActiveCount() int {
-	if o.pool == nil {
+	if o.client == nil {
 		return 0
 	}
 
-	return o.pool.ActiveCount()
+	switch client := o.client.(type) {
+	case *redis.Client:
+		return int(client.PoolStats().TotalConns)
+	case *redis.ClusterClient:
+		return int(client.PoolStats().TotalConns)
+	default:
+		return 0
+	}
 }
 
 // IdleCount returns the number of idle connections in the pool.
 func (o *RedisOp) IdleCount() int {
-	if o.pool == nil {
+	if o.client == nil {
 		return 0
 	}
 
-	return o.pool.IdleCount()
+	switch client := o.client.(type) {
+	case *redis.Client:
+		return int(client.PoolStats().IdleConns)
+	case *redis.ClusterClient:
+		return int(client.PoolStats().IdleConns)
+	default:
+		return 0
+	}
 }
 
 // RedisNotFound is returned when a key or record does not exist (nil reply).
@@ -102,16 +137,6 @@ type RedisPipelineCmd struct {
 	Args []interface{}
 }
 
-// Exec obtains a connection from the pool and executes the given function.
-func (o *RedisOp) Exec(f func(conn redis.Conn)) error {
-	if conn, err := o.pool.GetContext(context.Background()); err != nil {
-		return err
-	} else {
-		f(conn)
-		return conn.Close()
-	}
-}
-
 // Usage guarantees 1:1 mapping between cmds[i] and responses[i].
 // Pipeline sends multiple commands in a single batch and returns responses in the same order.
 func (o *RedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
@@ -119,51 +144,34 @@ func (o *RedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
 		return nil
 	}
 
-	conn := o.Conn()
-	defer conn.Close()
+	ctx := context.Background()
+	pipe := o.client.Pipeline()
 
 	n := len(cmds)
 	responses := make([]*RedisResponse, n)
-	sent := make([]bool, n)
+	redisCmds := make([]*redis.Cmd, n)
 
-	// Send each command one by one
 	for i, c := range cmds {
-		if err := conn.Send(c.Cmd, c.Args...); err != nil {
-			kklogger.ErrorJ("datastore:RedisOp.Pipeline#send!io", err.Error())
-			// If Send fails, do not send subsequent commands; mark current and remaining as errors
-			for j := i; j < n; j++ {
-				responses[j] = &RedisResponse{Error: fmt.Errorf("pipeline send failed at cmd %d: %w", j, err)}
-			}
-			return responses
-		}
-		sent[i] = true
+		args := append([]interface{}{c.Cmd}, c.Args...)
+		redisCmds[i] = pipe.Do(ctx, args...)
 	}
 
-	// Flush all buffered commands to Redis
-	if err := conn.Flush(); err != nil {
-		kklogger.ErrorJ("datastore:RedisOp.Pipeline#flush!io", err.Error())
-		for i := 0; i < n; i++ {
-			if responses[i] == nil {
-				responses[i] = &RedisResponse{Error: fmt.Errorf("pipeline flush failed: %w", err)}
-			}
-		}
-		return responses
+	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+		kklogger.ErrorJ("datastore:RedisOp.Pipeline#exec!io", err.Error())
 	}
 
-	// Receive responses in the same order as commands were sent
 	for i := 0; i < n; i++ {
-		if !sent[i] {
-			// Normally unreachable: previous Send failure returns earlier
+		err := redisCmds[i].Err()
+		if errors.Is(err, redis.Nil) {
+			responses[i] = &RedisResponse{Error: RedisNotFound}
 			continue
 		}
-
-		r, err := conn.Receive()
 		if err != nil {
-			kklogger.ErrorJ("datastore:RedisOp.Pipeline#receive!io", err.Error())
 			responses[i] = &RedisResponse{Error: err}
 			continue
 		}
 
+		r := redisCmds[i].Val()
 		if r == nil {
 			responses[i] = &RedisResponse{Error: RedisNotFound}
 		} else {
@@ -177,24 +185,32 @@ func (o *RedisOp) Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse {
 	return responses
 }
 
+func (o *RedisOp) Do(cmd string, args ...interface{}) *RedisResponse {
+	return o._Do(cmd, args...)
+}
+
 func (o *RedisOp) _Do(cmd string, args ...interface{}) *RedisResponse {
-	conn := o.Conn()
-	defer conn.Close()
-	if r, err := conn.Do(cmd, args...); err == nil {
-		if r == nil {
-			return &RedisResponse{
-				Error: RedisNotFound,
-			}
-		} else {
-			return &RedisResponse{
-				RedisResponseEntity: RedisResponseEntity{data: r},
-				Error:               nil,
-			}
+	cmdArgs := append([]interface{}{cmd}, args...)
+	r, err := o.client.Do(context.Background(), cmdArgs...).Result()
+	if errors.Is(err, redis.Nil) {
+		return &RedisResponse{
+			Error: RedisNotFound,
 		}
-	} else {
+	}
+	if err != nil {
 		return &RedisResponse{
 			Error: err,
 		}
+	}
+	if r == nil {
+		return &RedisResponse{
+			Error: RedisNotFound,
+		}
+	}
+
+	return &RedisResponse{
+		RedisResponseEntity: RedisResponseEntity{data: r},
+		Error:               nil,
 	}
 }
 
@@ -708,14 +724,40 @@ func (o *RedisOp) FlushAll() *RedisResponse {
 
 // Scan iterates the set of keys in the current database.
 func (o *RedisOp) Scan(cursor int64, match string, count int64) *RedisResponse {
-	args := []interface{}{cursor}
-	if match != "" {
-		args = append(args, "MATCH", match)
+	nextCursor := cursor
+	keys := make([]interface{}, 0)
+
+	for {
+		args := []interface{}{nextCursor}
+		if match != "" {
+			args = append(args, "MATCH", match)
+		}
+		if count > 0 {
+			args = append(args, "COUNT", count)
+		}
+
+		resp := o._Do("SCAN", args...)
+		if resp.Error != nil {
+			return resp
+		}
+
+		parts := resp.GetSlice()
+		if len(parts) != 2 {
+			return &RedisResponse{Error: fmt.Errorf("invalid scan response")}
+		}
+
+		nextCursor = parts[0].GetInt64()
+		for _, key := range parts[1].GetSlice() {
+			keys = append(keys, key.data)
+		}
+
+		if nextCursor == 0 {
+			return &RedisResponse{
+				RedisResponseEntity: RedisResponseEntity{data: []interface{}{int64(0), keys}},
+				Error:               nil,
+			}
+		}
 	}
-	if count > 0 {
-		args = append(args, "COUNT", count)
-	}
-	return o._Do("SCAN", args...)
 }
 
 // Ping checks if the server is alive and responding.
@@ -727,8 +769,8 @@ func (o *RedisOp) Ping() *RedisResponse {
 // This is not a Redis command; it releases local resources.
 // Safe to call multiple times.
 func (o *RedisOp) Close() error {
-	if o.pool != nil {
-		return o.pool.Close()
+	if o.client != nil {
+		return o.client.Close()
 	}
 
 	return nil
@@ -786,6 +828,8 @@ func (k *RedisResponseEntity) GetBytes() []byte {
 	switch v := k.data.(type) {
 	case []byte:
 		return v
+	case string:
+		return []byte(v)
 	}
 
 	return nil
@@ -829,6 +873,18 @@ func (k *RedisResponseEntity) GetSlice() []RedisResponseEntity {
 		for _, entity := range v {
 			entities = append(entities, RedisResponseEntity{data: entity})
 		}
+	case []string:
+		for _, entity := range v {
+			entities = append(entities, RedisResponseEntity{data: entity})
+		}
+	case map[interface{}]interface{}:
+		for mk, mv := range v {
+			entities = append(entities, RedisResponseEntity{data: mk}, RedisResponseEntity{data: mv})
+		}
+	case map[string]string:
+		for mk, mv := range v {
+			entities = append(entities, RedisResponseEntity{data: mk}, RedisResponseEntity{data: mv})
+		}
 	}
 
 	return entities
@@ -848,51 +904,64 @@ func (k *RedisResponse) RecordNotFound() bool {
 // NewRedis constructs a Redis client by loading the secret profile with the given name.
 // The secret must contain master/slave endpoints defined by RedisMeta (host and port only).
 func NewRedis(profileName string) *Redis {
-	profile := &secret.Redis{}
-	if err := secret.Load("redis", profileName, profile); err != nil {
+	profile, err := secret.LoadRedisProfile(profileName)
+	if err != nil {
 		kklogger.ErrorJ("datastore.redis#Load", err.Error())
 		return nil
 	}
+
+	return NewRedisWithProfile(profileName, profile)
+}
+
+func NewRedisWithProfile(profileName string, profile *secret.RedisProfile) *Redis {
+	if profile == nil {
+		return nil
+	}
+
+	profile.Normalize()
 
 	r := &Redis{
 		name: profileName,
 	}
 
-	mop := RedisOp{
-		meta: profile.Master,
-		pool: newRedisPool(profile.Master),
+	r.master = &RedisOp{
+		meta:   redisMetaFromAddrs(profile.MasterAddrs()),
+		client: newRedisClient(profile, profile.MasterAddrs(), false),
 	}
 
-	r.master = &mop
-
-	sop := RedisOp{
-		meta: profile.Slave,
-		pool: newRedisPool(profile.Slave),
+	r.slave = &RedisOp{
+		meta:   redisMetaFromAddrs(profile.SlaveAddrs()),
+		client: newRedisClient(profile, profile.SlaveAddrs(), profile.Mode == redisModeCluster),
 	}
-
-	r.slave = &sop
 
 	return r
 }
 
-func newRedisPool(meta secret.RedisMeta) *redis.Pool {
-	redisPool := &redis.Pool{
-		MaxActive:       DefaultRedisMaxActive,
-		MaxIdle:         DefaultRedisMaxIdle,
-		IdleTimeout:     time.Duration(DefaultRedisIdleTimeout) * time.Millisecond,
-		MaxConnLifetime: time.Duration(DefaultRedisMaxConnLifetime) * time.Millisecond,
-		Wait:            DefaultRedisWait,
-		Dial: func() (redis.Conn, error) {
-			c, err := redis.DialURL(fmt.Sprintf("redis://%s:%d", meta.Host,
-				meta.Port), redis.DialConnectTimeout(time.Duration(DefaultRedisDialTimeout)*time.Millisecond))
-			if err != nil {
-				return nil, err
-			}
-			return c, err
-		},
+func newRedisClient(profile *secret.RedisProfile, addrs []string, readOnly bool) redis.UniversalClient {
+	if len(addrs) == 0 {
+		return nil
 	}
 
-	return redisPool
+	options := &redis.UniversalOptions{
+		Addrs:           addrs,
+		Username:        profile.Username,
+		Password:        profile.Password,
+		DB:              profile.DB,
+		DialTimeout:     time.Duration(DefaultRedisDialTimeout) * time.Millisecond,
+		MaxIdleConns:    DefaultRedisMaxIdle,
+		MaxActiveConns:  DefaultRedisMaxActive,
+		ConnMaxIdleTime: time.Duration(DefaultRedisIdleTimeout) * time.Millisecond,
+		ConnMaxLifetime: time.Duration(DefaultRedisMaxConnLifetime) * time.Millisecond,
+		ReadOnly:        readOnly,
+		RouteByLatency:  profile.Cluster.RouteByLatency,
+		RouteRandomly:   profile.Cluster.RouteRandomly,
+	}
+
+	if DefaultRedisWait {
+		options.PoolTimeout = time.Duration(DefaultRedisDialTimeout) * time.Millisecond
+	}
+
+	return redis.NewUniversalClient(options)
 }
 
 // Sorted Set commands

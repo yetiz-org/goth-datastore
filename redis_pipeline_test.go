@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	secret "github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 )
 
 // TestRedisPipeline Basic batch pipeline flow

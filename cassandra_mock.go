@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gocql/gocql"
-	"github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 )
 
 // MockCassandraOp is a mock implementation of CassandraOperator for testing.

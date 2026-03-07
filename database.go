@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 	kklogger "github.com/yetiz-org/goth-kklogger"
-	"github.com/yetiz-org/goth-secret"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm/logger"

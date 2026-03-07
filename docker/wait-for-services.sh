@@ -173,6 +173,9 @@ main() {
     
     # Wait for services to be healthy
     wait_for_service "redis" 20
+	wait_for_service "redis-cluster-17000" 20
+	wait_for_service "redis-cluster-17001" 20
+	wait_for_service "redis-cluster-17002" 20
     wait_for_service "mysql" 40
     wait_for_service "postgres" 40
     wait_for_service "cassandra" 60  # Cassandra takes longer to start

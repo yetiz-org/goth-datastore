@@ -2,7 +2,7 @@ package datastore
 
 import (
 	"github.com/gocql/gocql"
-	"github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 )
 
 // CassandraOperator defines the interface for Cassandra operations.

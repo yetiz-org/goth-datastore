@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )

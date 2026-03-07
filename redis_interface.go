@@ -1,8 +1,7 @@
 package datastore
 
 import (
-	"github.com/gomodule/redigo/redis"
-	secret "github.com/yetiz-org/goth-secret"
+	secret "github.com/yetiz-org/goth-datastore/secrets"
 )
 
 // RedisOperator defines the interface for Redis operations.
@@ -11,14 +10,12 @@ import (
 type RedisOperator interface {
 	// Connection and pool management
 	Meta() secret.RedisMeta
-	Pool() *redis.Pool
-	Conn() redis.Conn
 	ActiveCount() int
 	IdleCount() int
 	Close() error
-	Exec(f func(conn redis.Conn)) error
 
 	// Pipeline operations
+	Do(cmd string, args ...interface{}) *RedisResponse
 	Pipeline(cmds ...RedisPipelineCmd) []*RedisResponse
 
 	// String operations
