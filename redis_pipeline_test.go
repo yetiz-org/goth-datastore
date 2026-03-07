@@ -12,7 +12,7 @@ import (
 // TestRedisPipeline Basic batch pipeline flow
 func TestRedisPipeline(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -117,7 +117,7 @@ func TestRedisPipeline(t *testing.T) {
 // TestRedisPipelineEmpty Empty command set behavior
 func TestRedisPipelineEmpty(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -136,7 +136,7 @@ func TestRedisPipelineEmpty(t *testing.T) {
 // TestRedisPipelineWithServerError Server-side error responses still preserve order and subsequent responses
 func TestRedisPipelineWithServerError(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()

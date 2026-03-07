@@ -143,7 +143,7 @@ func TestCassandraOpBasic(t *testing.T) {
 // TestNewCassandra tests creating a new Cassandra instance
 func TestNewCassandra(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()

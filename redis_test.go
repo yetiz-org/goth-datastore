@@ -120,7 +120,7 @@ func TestRedisPool(t *testing.T) {
 // TestLoadRedisExampleSecret tests loading Redis secret from example file
 func TestLoadRedisExampleSecret(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -171,7 +171,7 @@ func TestLoadRedisExampleSecret(t *testing.T) {
 // TestRedisKeyCommands Key command tests
 func TestRedisKeyCommands(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -464,7 +464,7 @@ func TestRedisKeyCommands(t *testing.T) {
 // TestRedisListCommands List command tests
 func TestRedisListCommands(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -708,7 +708,7 @@ func TestRedisListCommands(t *testing.T) {
 // TestRedisSetCommands Set command tests
 func TestRedisSetCommands(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -941,7 +941,7 @@ func TestRedisSetCommands(t *testing.T) {
 // TestRedisSortedSetCommands Sorted Set command tests
 func TestRedisSortedSetCommands(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -1373,7 +1373,7 @@ func TestRedisSortedSetCommands(t *testing.T) {
 // TestRedisHashCommands Hash command tests
 func TestRedisHashCommands(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -1783,7 +1783,7 @@ func TestRedisHashCommands(t *testing.T) {
 // TestRedisEval Script command tests
 func TestRedisEval(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -1888,7 +1888,7 @@ func TestRedisEval(t *testing.T) {
 // TestRedisStringCommands String command tests - completecoverall 11  String command
 func TestRedisStringCommands(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -3041,7 +3041,7 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 		// when using the interface-based design
 
 		// Save original secret path and restore it after test
-		originalPath := secret.PATH
+		originalPath := secret.Path()
 		defer func() {
 			secret.PATH = originalPath
 		}()
@@ -3071,7 +3071,7 @@ func TestMockRedisBackwardCompatibility(t *testing.T) {
 }
 
 func TestRedisDirectCommandIntegration(t *testing.T) {
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -3769,7 +3769,7 @@ func BenchmarkRedisOperations(b *testing.B) {
 }
 
 func TestLoadRedisProfileLegacyAndCluster(t *testing.T) {
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -3855,7 +3855,7 @@ func TestLoadRedisProfileLegacyAndCluster(t *testing.T) {
 }
 
 func TestNewRedisSupportsSingleAndClusterProfiles(t *testing.T) {
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()

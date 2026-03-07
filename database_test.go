@@ -449,7 +449,7 @@ func BenchmarkNewDBPool_FailureCase(b *testing.B) {
 // TestLoadDatabaseExampleSecret tests loading Database secret from example file
 func TestLoadDatabaseExampleSecret(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -507,7 +507,7 @@ func TestLoadDatabaseExampleSecret(t *testing.T) {
 // TestLoadDatabasePostgresExampleSecret tests loading PostgreSQL Database secret from example file
 func TestLoadDatabasePostgresExampleSecret(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -563,7 +563,7 @@ func TestLoadDatabasePostgresExampleSecret(t *testing.T) {
 }
 
 func TestDatabaseMySQLCRUD(t *testing.T) {
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -617,7 +617,7 @@ func TestDatabaseMySQLCRUD(t *testing.T) {
 }
 
 func TestDatabasePostgresCRUD(t *testing.T) {
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -815,7 +815,7 @@ func TestMockDatabaseBuilder(t *testing.T) {
 
 func TestBuildMysqlDSN_MultiStatements(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
@@ -859,7 +859,7 @@ func TestBuildMysqlDSN_MultiStatements(t *testing.T) {
 
 func TestBuildPostgresDialectorConfig_MultiStatements(t *testing.T) {
 	// Save original secret path and restore it after test
-	originalPath := secret.PATH
+	originalPath := secret.Path()
 	defer func() {
 		secret.PATH = originalPath
 	}()
