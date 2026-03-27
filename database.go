@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -31,9 +32,52 @@ var DefaultDatabaseLoc = "Local"
 var DefaultDatabaseMaxAllowedPacket = 25165824
 var DefaultDatabaseParseTime = true
 var DefaultDatabaseMultiStatements = false
+var DefaultDatabaseTransactionIsolation DatabaseIsolationLevel = ""
 
 var DefaultDatabasePostgresSSLMode = "disable"
 var DefaultDatabasePostgresTimeZone = "Local"
+
+// DatabaseIsolationLevel represents a SQL transaction isolation level.
+// Use the predefined constants for type safety; the zero value (empty string)
+// means "use database default" and will not be appended to the DSN.
+type DatabaseIsolationLevel string
+
+const (
+	DatabaseIsolationLevelReadUncommitted DatabaseIsolationLevel = "ReadUncommitted"
+	DatabaseIsolationLevelReadCommitted   DatabaseIsolationLevel = "ReadCommitted"
+	DatabaseIsolationLevelRepeatableRead  DatabaseIsolationLevel = "RepeatableRead"
+	DatabaseIsolationLevelSerializable    DatabaseIsolationLevel = "Serializable"
+)
+
+func (l DatabaseIsolationLevel) mysqlValue() string {
+	switch l {
+	case DatabaseIsolationLevelReadUncommitted:
+		return "'READ-UNCOMMITTED'"
+	case DatabaseIsolationLevelReadCommitted:
+		return "'READ-COMMITTED'"
+	case DatabaseIsolationLevelRepeatableRead:
+		return "'REPEATABLE-READ'"
+	case DatabaseIsolationLevelSerializable:
+		return "'SERIALIZABLE'"
+	default:
+		return ""
+	}
+}
+
+func (l DatabaseIsolationLevel) postgresValue() string {
+	switch l {
+	case DatabaseIsolationLevelReadUncommitted:
+		return "'read uncommitted'"
+	case DatabaseIsolationLevelReadCommitted:
+		return "'read committed'"
+	case DatabaseIsolationLevelRepeatableRead:
+		return "'repeatable read'"
+	case DatabaseIsolationLevelSerializable:
+		return "'serializable'"
+	default:
+		return ""
+	}
+}
 
 type Database struct {
 	writer DatabaseOperator
@@ -51,7 +95,7 @@ func (k *Database) Reader() DatabaseOperator {
 type DatabaseOp struct {
 	meta        secret.DatabaseMeta
 	db          *gorm.DB
-	opLock      sync.Mutex
+	opLock      sync.RWMutex
 	ConnParams  ConnParams
 	MysqlParams MysqlParams
 	GORMParams  gorm.Config
@@ -91,11 +135,35 @@ type ConnParams struct {
 	ConnMaxIdleTime  int
 	SSLMode          string
 	TimeZone         string
+
+	// TransactionIsolation sets the default transaction isolation level.
+	// The zero value (empty string) means "use database default" and is not
+	// appended to the DSN. Use the DatabaseIsolationLevel* constants.
+	// The value is automatically formatted per database adapter:
+	//   MySQL:      &transaction_isolation='READ-COMMITTED'
+	//   PostgreSQL: default_transaction_isolation='read committed'
+	TransactionIsolation DatabaseIsolationLevel
+
+	// ExtraParams holds additional DSN parameters as key-value pairs.
+	// These are appended to the generated DSN string for any database adapter,
+	// after all typed fields (including TransactionIsolation).
+	//
+	// For MySQL, entries are appended as &key=value. Any key not recognized
+	// by the driver is sent as a system variable via SET on connection.
+	//   Example: {"autocommit": "1", "sql_mode": "'STRICT_TRANS_TABLES'"}
+	//
+	// For PostgreSQL, entries are appended as key=value (space-separated).
+	// Values containing spaces must be single-quoted.
+	//   Example: {"application_name": "myapp", "statement_timeout": "30000"}
+	ExtraParams map[string]string
 }
 
 func (o *DatabaseOp) DB() *gorm.DB {
-	if o.db != nil {
-		return o.db
+	o.opLock.RLock()
+	db := o.db
+	o.opLock.RUnlock()
+	if db != nil {
+		return db
 	}
 
 	o.opLock.Lock()
@@ -170,22 +238,23 @@ func NewDatabase(profileName string) *Database {
 	if profile.Writer.Adapter != "" {
 		database.writer = &DatabaseOp{
 			ConnParams: ConnParams{
-				Charset:          DefaultDatabaseCharset,
-				Timeout:          DefaultDatabaseDialTimeout,
-				ReadTimeout:      DefaultDatabaseReadTimeout,
-				WriteTimeout:     DefaultDatabaseWriteTimeout,
-				Collation:        DefaultDatabaseCollation,
-				Loc:              DefaultDatabaseLoc,
-				ClientFoundRows:  DefaultDatabaseClientFoundRows,
-				ParseTime:        DefaultDatabaseParseTime,
-				MultiStatements:  DefaultDatabaseMultiStatements,
-				MaxAllowedPacket: DefaultDatabaseMaxAllowedPacket,
-				MaxOpenConn:      DefaultDatabaseMaxOpenConn,
-				MaxIdleConn:      DefaultDatabaseMaxIdleConn,
-				ConnMaxLifetime:  DefaultDatabaseConnMaxLifetime,
-				ConnMaxIdleTime:  DefaultDatabaseConnMaxIdleTime,
-				SSLMode:          DefaultDatabasePostgresSSLMode,
-				TimeZone:         DefaultDatabasePostgresTimeZone,
+				Charset:              DefaultDatabaseCharset,
+				Timeout:              DefaultDatabaseDialTimeout,
+				ReadTimeout:          DefaultDatabaseReadTimeout,
+				WriteTimeout:         DefaultDatabaseWriteTimeout,
+				Collation:            DefaultDatabaseCollation,
+				Loc:                  DefaultDatabaseLoc,
+				ClientFoundRows:      DefaultDatabaseClientFoundRows,
+				ParseTime:            DefaultDatabaseParseTime,
+				MultiStatements:      DefaultDatabaseMultiStatements,
+				MaxAllowedPacket:     DefaultDatabaseMaxAllowedPacket,
+				MaxOpenConn:          DefaultDatabaseMaxOpenConn,
+				MaxIdleConn:          DefaultDatabaseMaxIdleConn,
+				ConnMaxLifetime:      DefaultDatabaseConnMaxLifetime,
+				ConnMaxIdleTime:      DefaultDatabaseConnMaxIdleTime,
+				TransactionIsolation: DefaultDatabaseTransactionIsolation,
+				SSLMode:              DefaultDatabasePostgresSSLMode,
+				TimeZone:             DefaultDatabasePostgresTimeZone,
 			},
 			meta: profile.Writer,
 		}
@@ -194,22 +263,23 @@ func NewDatabase(profileName string) *Database {
 	if profile.Reader.Adapter != "" {
 		database.reader = &DatabaseOp{
 			ConnParams: ConnParams{
-				Charset:          DefaultDatabaseCharset,
-				Timeout:          DefaultDatabaseDialTimeout,
-				ReadTimeout:      DefaultDatabaseReadTimeout,
-				WriteTimeout:     DefaultDatabaseWriteTimeout,
-				Collation:        DefaultDatabaseCollation,
-				Loc:              DefaultDatabaseLoc,
-				ClientFoundRows:  DefaultDatabaseClientFoundRows,
-				ParseTime:        DefaultDatabaseParseTime,
-				MultiStatements:  DefaultDatabaseMultiStatements,
-				MaxAllowedPacket: DefaultDatabaseMaxAllowedPacket,
-				MaxOpenConn:      DefaultDatabaseMaxOpenConn,
-				MaxIdleConn:      DefaultDatabaseMaxIdleConn,
-				ConnMaxLifetime:  DefaultDatabaseConnMaxLifetime,
-				ConnMaxIdleTime:  DefaultDatabaseConnMaxIdleTime,
-				SSLMode:          DefaultDatabasePostgresSSLMode,
-				TimeZone:         DefaultDatabasePostgresTimeZone,
+				Charset:              DefaultDatabaseCharset,
+				Timeout:              DefaultDatabaseDialTimeout,
+				ReadTimeout:          DefaultDatabaseReadTimeout,
+				WriteTimeout:         DefaultDatabaseWriteTimeout,
+				Collation:            DefaultDatabaseCollation,
+				Loc:                  DefaultDatabaseLoc,
+				ClientFoundRows:      DefaultDatabaseClientFoundRows,
+				ParseTime:            DefaultDatabaseParseTime,
+				MultiStatements:      DefaultDatabaseMultiStatements,
+				MaxAllowedPacket:     DefaultDatabaseMaxAllowedPacket,
+				MaxOpenConn:          DefaultDatabaseMaxOpenConn,
+				MaxIdleConn:          DefaultDatabaseMaxIdleConn,
+				ConnMaxLifetime:      DefaultDatabaseConnMaxLifetime,
+				ConnMaxIdleTime:      DefaultDatabaseConnMaxIdleTime,
+				TransactionIsolation: DefaultDatabaseTransactionIsolation,
+				SSLMode:              DefaultDatabasePostgresSSLMode,
+				TimeZone:             DefaultDatabasePostgresTimeZone,
 			},
 			meta: profile.Reader,
 		}
@@ -219,7 +289,7 @@ func NewDatabase(profileName string) *Database {
 }
 
 func buildMysqlDSN(username, password, host string, port uint, dbName, charset string, params ConnParams) string {
-	return fmt.Sprintf("%s:%s@(%s:%d)/%s?"+
+	dsn := fmt.Sprintf("%s:%s@(%s:%d)/%s?"+
 		"charset=%s"+
 		"&timeout=%s"+
 		"&readTimeout=%s"+
@@ -246,10 +316,37 @@ func buildMysqlDSN(username, password, host string, port uint, dbName, charset s
 		params.MaxAllowedPacket,
 		params.MultiStatements,
 	)
+
+	if v := params.TransactionIsolation.mysqlValue(); v != "" {
+		dsn += "&transaction_isolation=" + v
+	}
+	dsn += buildExtraParamsMysql(params.ExtraParams)
+	return dsn
 }
 
-func buildPostgresDSN(host, username, password, dbName string, port uint, sslMode, timeZone string) string {
-	return fmt.Sprintf(
+func buildExtraParamsMysql(extra map[string]string) string {
+	if len(extra) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(extra))
+	for k := range extra {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString("&")
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(extra[k])
+	}
+	return b.String()
+}
+
+func buildPostgresDSN(host, username, password, dbName string, port uint, sslMode, timeZone string, isolation DatabaseIsolationLevel, extraParams map[string]string) string {
+	dsn := fmt.Sprintf(
 		"host=%s user=%s password=%s dbname=%s port=%d sslmode=%s TimeZone=%s",
 		host,
 		username,
@@ -259,6 +356,33 @@ func buildPostgresDSN(host, username, password, dbName string, port uint, sslMod
 		sslMode,
 		timeZone,
 	)
+
+	if v := isolation.postgresValue(); v != "" {
+		dsn += " default_transaction_isolation=" + v
+	}
+	dsn += buildExtraParamsPostgres(extraParams)
+	return dsn
+}
+
+func buildExtraParamsPostgres(extra map[string]string) string {
+	if len(extra) == 0 {
+		return ""
+	}
+
+	keys := make([]string, 0, len(extra))
+	for k := range extra {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(" ")
+		b.WriteString(k)
+		b.WriteString("=")
+		b.WriteString(extra[k])
+	}
+	return b.String()
 }
 
 func buildPostgresDialectorConfig(meta secret.DatabaseMeta, params ConnParams, sslMode, timeZone string) postgres.Config {
@@ -271,6 +395,8 @@ func buildPostgresDialectorConfig(meta secret.DatabaseMeta, params ConnParams, s
 			meta.Params.Port,
 			sslMode,
 			timeZone,
+			params.TransactionIsolation,
+			params.ExtraParams,
 		),
 		PreferSimpleProtocol: params.MultiStatements,
 	}
