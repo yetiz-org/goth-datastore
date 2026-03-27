@@ -1234,9 +1234,9 @@ func TestMySQLHighConcurrencyConnParams(t *testing.T) {
 		// -- Standard DSN parameters --
 		Charset:          "utf8mb4",
 		Collation:        "utf8mb4_general_ci",
-		Timeout:          "3s",    // TCP connect timeout
-		ReadTimeout:      "30s",   // per-query read deadline
-		WriteTimeout:     "30s",   // per-query write deadline
+		Timeout:          "3s",  // TCP connect timeout
+		ReadTimeout:      "30s", // per-query read deadline
+		WriteTimeout:     "30s", // per-query write deadline
 		Loc:              "UTC",
 		MaxAllowedPacket: 25165824, // 24 MiB
 
@@ -1488,7 +1488,7 @@ func TestDatabasePostgresHighConcurrencyLoad(t *testing.T) {
 	op.ConnParams.TimeZone = "UTC"
 	op.ConnParams.TransactionIsolation = DatabaseIsolationLevelReadCommitted
 	op.ConnParams.ExtraParams = map[string]string{
-		"application_name": "goth-datastore-test",
+		"application_name":  "goth-datastore-test",
 		"statement_timeout": "30000",
 		"connect_timeout":   "10",
 	}
