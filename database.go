@@ -37,6 +37,26 @@ var DefaultDatabaseTransactionIsolation DatabaseIsolationLevel = ""
 var DefaultDatabasePostgresSSLMode = "disable"
 var DefaultDatabasePostgresTimeZone = "Local"
 
+func init() {
+	envInt("GOTH_DEFAULT_DATABASE_MAX_OPEN_CONN", &DefaultDatabaseMaxOpenConn)
+	envInt("GOTH_DEFAULT_DATABASE_MAX_IDLE_CONN", &DefaultDatabaseMaxIdleConn)
+	envInt("GOTH_DEFAULT_DATABASE_CONN_MAX_LIFETIME", &DefaultDatabaseConnMaxLifetime)
+	envInt("GOTH_DEFAULT_DATABASE_CONN_MAX_IDLE_TIME", &DefaultDatabaseConnMaxIdleTime)
+	envStr("GOTH_DEFAULT_DATABASE_CHARSET", &DefaultDatabaseCharset)
+	envStr("GOTH_DEFAULT_DATABASE_DIAL_TIMEOUT", &DefaultDatabaseDialTimeout)
+	envStr("GOTH_DEFAULT_DATABASE_READ_TIMEOUT", &DefaultDatabaseReadTimeout)
+	envStr("GOTH_DEFAULT_DATABASE_WRITE_TIMEOUT", &DefaultDatabaseWriteTimeout)
+	envStr("GOTH_DEFAULT_DATABASE_COLLATION", &DefaultDatabaseCollation)
+	envBool("GOTH_DEFAULT_DATABASE_CLIENT_FOUND_ROWS", &DefaultDatabaseClientFoundRows)
+	envStr("GOTH_DEFAULT_DATABASE_LOC", &DefaultDatabaseLoc)
+	envInt("GOTH_DEFAULT_DATABASE_MAX_ALLOWED_PACKET", &DefaultDatabaseMaxAllowedPacket)
+	envBool("GOTH_DEFAULT_DATABASE_PARSE_TIME", &DefaultDatabaseParseTime)
+	envBool("GOTH_DEFAULT_DATABASE_MULTI_STATEMENTS", &DefaultDatabaseMultiStatements)
+	envStr("GOTH_DEFAULT_DATABASE_TRANSACTION_ISOLATION", &DefaultDatabaseTransactionIsolation)
+	envStr("GOTH_DEFAULT_DATABASE_POSTGRES_SSL_MODE", &DefaultDatabasePostgresSSLMode)
+	envStr("GOTH_DEFAULT_DATABASE_POSTGRES_TIME_ZONE", &DefaultDatabasePostgresTimeZone)
+}
+
 // DatabaseIsolationLevel represents a SQL transaction isolation level.
 // Use the predefined constants for type safety; the zero value (empty string)
 // means "use database default" and will not be appended to the DSN.
